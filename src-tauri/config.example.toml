@@ -1,0 +1,11 @@
+# Copy to config.toml (next to the app, or the working directory in dev).
+
+[database]
+host = "localhost"
+port = 5432
+user = "postgres"
+# Written as-is: characters like @ : / # need no escaping.
+password = "postgres"
+# Created at startup if it does not exist, then the tables are created by the embedded migrations.
+dbname = "golf_report"
+max_connections = 5

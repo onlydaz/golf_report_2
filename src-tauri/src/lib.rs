@@ -1,7 +1,10 @@
+mod config;
+mod db;
 mod plc;
 
 use tauri::{Emitter, Manager};
 
+use config::AppConfig;
 use plc::{commands::*, run_poller, spawn_plc_actor, PlcConfig, PollEvent};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -17,6 +20,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            let app_cfg = AppConfig::load();
+            // Saves records to Postgres; creates the database and tables if missing.
+            let db_tx = db::spawn_writer(app_cfg.database, app.handle().clone());
+
             let cfg = PlcConfig::default();
             let poll_interval = cfg.poll_interval;
             let plc = spawn_plc_actor(cfg);
@@ -39,7 +46,15 @@ pub fn run() {
             tauri::async_runtime::spawn(run_poller(plc.clone(), poll_interval, move |ev| {
                 let _ = match ev {
                     PollEvent::Control(c) => app_handle.emit("plc://control", c),
-                    PollEvent::Record(r) => app_handle.emit("plc://record", r),
+                    PollEvent::Record(r) => {
+                        if let Err(e) = db_tx.try_send(r.clone()) {
+                            let _ = app_handle.emit(
+                                "db://error",
+                                db::DbError { record_seq: Some(r.record_seq), message: format!("save queue: {e}") },
+                            );
+                        }
+                        app_handle.emit("plc://record", r)
+                    }
                     PollEvent::Error(e) => app_handle.emit("plc://poll-error", e),
                 };
             }));

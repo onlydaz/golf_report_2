@@ -25,3 +25,6 @@ dist-ssr
 
 # LibreOffice lock files
 .~lock.*#
+
+# Local config (DB password)
+src-tauri/config.toml
