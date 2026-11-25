@@ -3,7 +3,7 @@
 use tauri::State;
 
 use super::control::{read_control_area, ControlArea};
-use super::{PlcError, PlcHandle, PlcStatus};
+use super::{write_pc_read_count, PlcError, PlcHandle, PlcStatus};
 
 #[tauri::command]
 pub fn plc_status(plc: State<'_, PlcHandle>) -> PlcStatus {
@@ -70,4 +70,10 @@ pub async fn plc_write_registers(
 #[tauri::command]
 pub async fn plc_read_control_area(plc: State<'_, PlcHandle>) -> Result<ControlArea, PlcError> {
     read_control_area(&plc).await
+}
+
+/// Reset PC_ReadCount (D25008..D25009) to 0.
+#[tauri::command]
+pub async fn plc_reset_read_count(plc: State<'_, PlcHandle>) -> Result<(), PlcError> {
+    write_pc_read_count(&plc, 0).await
 }

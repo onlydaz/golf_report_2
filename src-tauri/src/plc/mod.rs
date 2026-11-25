@@ -22,4 +22,4 @@ pub use actor::{spawn_plc_actor, PlcStatus};
 pub use config::PlcConfig;
 pub use error::PlcError;
 pub use handle::PlcHandle;
-pub use poller::{run_poller, PollEvent};
+pub use poller::{run_poller, write_pc_read_count, PollEvent};

@@ -56,6 +56,9 @@ export interface ControlArea {
 
 export const readControlArea = () => invoke<ControlArea>("plc_read_control_area");
 
+/** Write 0 to PC_ReadCount (D25008..D25009). */
+export const resetReadCount = () => invoke<void>("plc_reset_read_count");
+
 /** Live control area, emitted by the backend poller every poll interval. */
 export function onControlArea(cb: (c: ControlArea) => void): Promise<UnlistenFn> {
   return listen<ControlArea>("plc://control", (e) => cb(e.payload));

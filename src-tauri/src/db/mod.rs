@@ -3,15 +3,18 @@
 //! [`spawn_writer`] owns the connection pool: it connects (creating the database
 //! and tables if needed), then saves every record sent to it, in order.
 
+pub mod commands;
+mod query;
 mod store;
 
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection, PgPool};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::config::DbConfig;
 use crate::plc::record::StickRecord;
@@ -65,7 +68,7 @@ pub async fn connect(cfg: &DbConfig) -> Result<PgPool, sqlx::Error> {
     Ok(pool)
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbStatus {
     pub connected: bool,
@@ -87,29 +90,74 @@ pub struct DbError {
     pub message: String,
 }
 
+/// One record to save; the writer answers on `done` once the save finished.
+pub struct SaveRequest {
+    pub record: StickRecord,
+    pub done: oneshot::Sender<Result<i64, String>>,
+}
+
+/// Latest connection status, readable by the `db_status` command (the frontend
+/// may start listening after the first `db://status` event was emitted).
+#[derive(Clone, Default)]
+pub struct DbStatusState(Arc<Mutex<DbStatus>>);
+
+impl DbStatusState {
+    pub fn get(&self) -> DbStatus {
+        self.0.lock().unwrap().clone()
+    }
+
+    fn set(&self, app: &AppHandle, status: DbStatus) {
+        *self.0.lock().unwrap() = status.clone();
+        let _ = app.emit("db://status", status);
+    }
+}
+
+/// Pool shared with the query commands, set once the writer has connected.
+#[derive(Clone, Default)]
+pub struct DbPool(Arc<OnceLock<PgPool>>);
+
+impl DbPool {
+    /// The pool, or an error message for the frontend while the DB is unreachable.
+    pub fn get(&self) -> Result<PgPool, String> {
+        self.0.get().cloned().ok_or_else(|| "Chưa kết nối cơ sở dữ liệu".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn db_status(state: tauri::State<'_, DbStatusState>) -> DbStatus {
+    state.get()
+}
+
 /// Start the writer task. Events: `db://status`, `db://saved`, `db://error`.
-pub fn spawn_writer(cfg: DbConfig, app: AppHandle) -> mpsc::Sender<StickRecord> {
-    let (tx, mut rx) = mpsc::channel::<StickRecord>(QUEUE_CAPACITY);
+pub fn spawn_writer(
+    cfg: DbConfig,
+    app: AppHandle,
+    status: DbStatusState,
+    shared: DbPool,
+) -> mpsc::Sender<SaveRequest> {
+    let (tx, mut rx) = mpsc::channel::<SaveRequest>(QUEUE_CAPACITY);
     tauri::async_runtime::spawn(async move {
         let pool = loop {
             match connect(&cfg).await {
                 Ok(pool) => break pool,
                 Err(e) => {
                     eprintln!("db: connect failed: {e}");
-                    let _ = app.emit("db://status", DbStatus { connected: false, error: Some(e.to_string()) });
+                    status.set(&app, DbStatus { connected: false, error: Some(e.to_string()) });
                     tokio::time::sleep(RECONNECT_DELAY).await;
                 }
             }
         };
-        let _ = app.emit("db://status", DbStatus { connected: true, error: None });
+        let _ = shared.0.set(pool.clone());
+        status.set(&app, DbStatus { connected: true, error: None });
 
-        while let Some(r) = rx.recv().await {
-            match save_record(&pool, &r).await {
+        while let Some(SaveRequest { record: r, done }) = rx.recv().await {
+            let result = match save_record(&pool, &r).await {
                 Ok(id) => {
                     let _ = app.emit(
                         "db://saved",
                         Saved { id, record_seq: r.record_seq, stick_no: r.stick_no },
                     );
+                    Ok(id)
                 }
                 Err(e) => {
                     eprintln!("db: save record_seq {} failed: {e}", r.record_seq);
@@ -117,8 +165,11 @@ pub fn spawn_writer(cfg: DbConfig, app: AppHandle) -> mpsc::Sender<StickRecord> 
                         "db://error",
                         DbError { record_seq: Some(r.record_seq), message: e.to_string() },
                     );
+                    Err(e.to_string())
                 }
-            }
+            };
+            // The poller may have stopped waiting (timeout); that is fine.
+            let _ = done.send(result);
         }
     });
     tx

@@ -52,6 +52,13 @@ impl Service for FakePlc {
                     *slot = v;
                     Ok(Response::WriteSingleRegister(addr, v))
                 }
+                Request::WriteMultipleRegisters(addr, values) => {
+                    let mut regs = regs.lock().unwrap();
+                    let (a, n) = (addr as usize, values.len());
+                    let slots = regs.get_mut(a..a + n).ok_or(ExceptionCode::IllegalDataAddress)?;
+                    slots.copy_from_slice(&values);
+                    Ok(Response::WriteMultipleRegisters(addr, n as u16))
+                }
                 _ => Err(ExceptionCode::IllegalFunction),
             }
         })
@@ -196,9 +203,14 @@ async fn poller_reads_record_on_rising_edge() {
     plc.write_single_register(record::start(0) + record::STICK_NO, 4242).await.unwrap();
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let poller = tokio::spawn(run_poller(plc.clone(), cfg.poll_interval, move |ev| {
-        let _ = tx.send(ev);
-    }));
+    let poller = tokio::spawn(run_poller(
+        plc.clone(),
+        cfg.poll_interval,
+        move |ev| {
+            let _ = tx.send(ev);
+        },
+        |_| async {},
+    ));
 
     // Wait for `n` control polls, collecting the records seen meanwhile.
     async fn collect(rx: &mut mpsc::UnboundedReceiver<PollEvent>, n: usize) -> Vec<super::record::StickRecord> {
@@ -217,15 +229,45 @@ async fn poller_reads_record_on_rising_edge() {
     // Already 1 at start: not an edge.
     assert!(collect(&mut rx, 3).await.is_empty());
 
-    // 1 -> 0 -> 1: exactly one record.
-    plc.write_single_register(ready, 0).await.unwrap();
-    assert!(collect(&mut rx, 3).await.is_empty());
-    plc.write_single_register(ready, 1).await.unwrap();
-    let recs = collect(&mut rx, 3).await;
-    assert_eq!(recs.len(), 1);
-    assert_eq!(recs[0].stick_no, 4242);
+    let ctrl = || async { super::control::read_control_area(&plc).await.unwrap() };
+    let done = control::START + control::PC_READ_DONE;
 
-    // Staying at 1: no more reads.
+    // Acts like the PLC for one stick: DataReady 0 -> 1, expect exactly one record + ack.
+    // PC_ReadDone goes back to 0 first, as the real PLC does after the ack.
+    async fn edge(plc: &PlcHandle, rx: &mut mpsc::UnboundedReceiver<PollEvent>, ready: u16, done: u16) {
+        plc.write_single_register(done, 0).await.unwrap();
+        plc.write_single_register(ready, 0).await.unwrap();
+        assert!(collect(rx, 3).await.is_empty());
+        plc.write_single_register(ready, 1).await.unwrap();
+        let recs = collect(rx, 3).await;
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].stick_no, 4242);
+    }
+
+    // Nothing acked yet.
+    assert_eq!(ctrl().await.pc_read_count, 0);
+
+    edge(&plc, &mut rx, ready, done).await;
+    let c = ctrl().await;
+    assert_eq!((c.pc_read_count, c.pc_read_done), (1, 1));
+
+    // Staying at 1: no more reads, no more acks.
     assert!(collect(&mut rx, 3).await.is_empty());
+    assert_eq!(ctrl().await.pc_read_count, 1);
+
+    edge(&plc, &mut rx, ready, done).await;
+    let c = ctrl().await;
+    assert_eq!((c.pc_read_count, c.pc_read_done), (2, 1));
+
+    // Reset to 0: the next ack writes 1.
+    write_pc_read_count(&plc, 0).await.unwrap();
+    edge(&plc, &mut rx, ready, done).await;
+    assert_eq!(ctrl().await.pc_read_count, 1);
+
+    // DINT is written low word first.
+    write_pc_read_count(&plc, 0x0001_FFFF).await.unwrap();
+    let w = plc.read_holding_registers(control::START + control::PC_READ_COUNT, 2).await.unwrap();
+    assert_eq!(w, vec![0xFFFF, 0x0001]);
+
     poller.abort();
 }

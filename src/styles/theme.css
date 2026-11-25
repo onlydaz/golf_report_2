@@ -1,0 +1,94 @@
+/* Shared theme, carried over from golf-report v1 (see docs/ui-theme.md).
+   Values mirror src/theme/tokens.ts. */
+
+:root {
+  --c-primary: #1769aa;
+  --c-primary-hover: #2367a4;
+  --c-navy-900: #102a43;
+  --c-navy-800: #243b53;
+  --c-navy-700: #334e68;
+  --c-navy-600: #486581;
+  --c-navy-500: #526b83;
+  --c-navy-400: #627d98;
+  --c-navy-300: #829ab1;
+  --c-border: #dce5ed;
+  --c-border-soft: #e6edf3;
+  --c-page-bg: #f4f7fa;
+  --c-surface-muted: #f7fafc;
+
+  --c-ok-text: #167451;
+  --c-ok-bg: #eefaf3;
+  --c-ok-border: #b8e4cd;
+  --c-ok-solid: #19764d;
+  --c-ng-text: #bc3030;
+  --c-ng-bg: #fff1f0;
+  --c-ng-border: #f0c2c2;
+  --c-ng-solid: #ba3938;
+  --c-limit: #d92d20;
+
+  --font-body: "DM Sans", "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "DM Sans", "Segoe UI", sans-serif;
+
+  --radius-card: 12px;
+  --shadow-card: 0 3px 14px rgba(16, 42, 67, 0.035);
+  --sider-width: 220px;
+
+  font-family: var(--font-body);
+  color: var(--c-navy-900);
+  background: var(--c-page-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; min-width: 760px; background: var(--c-page-bg); }
+
+/* Page heading: title left, status pills right. */
+.page-heading {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+  padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--c-border);
+}
+.page-title {
+  margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 700;
+  line-height: 1.2; letter-spacing: -0.7px; color: var(--c-navy-900);
+}
+.page-status { display: flex; gap: 8px; margin-left: auto; }
+.page-status-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px;
+  font-size: 13px; font-weight: 600;
+}
+.page-status-pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.page-status-connected { background: #e5f4eb; color: #187849; }
+.page-status-error { background: #fdece9; color: #bc3a32; }
+.page-status-unverified { background: #edf1f5; color: var(--c-navy-500); }
+
+/* Cards. */
+.section-card { border: 1px solid var(--c-border-soft); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.kicker { color: var(--c-navy-600); font-size: 15px; font-weight: 600; margin-bottom: 8px; letter-spacing: .03em; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* OK / NG result tiles. */
+.result-tile {
+  display: flex; flex-direction: column; justify-content: center; min-height: 88px; padding: 10px 12px;
+  border: 1px solid #e3ebf3; border-radius: 8px; background: var(--c-surface-muted);
+}
+.result-tile span { color: #405b72; font-size: 13px; font-weight: 700; letter-spacing: .03em; }
+.result-tile strong { font-family: var(--font-display); font-size: 32px; font-weight: 700; line-height: 1.1; color: var(--c-navy-400); }
+.result-tile-ok { border-color: var(--c-ok-border); background: var(--c-ok-bg); }
+.result-tile-ok strong { color: var(--c-ok-text); }
+.result-tile-ng { border-color: var(--c-ng-border); background: var(--c-ng-bg); }
+.result-tile-ng strong { color: var(--c-ng-text); }
+.result-tile-solid.result-tile-ok { background: var(--c-ok-solid); border-color: var(--c-ok-solid); }
+.result-tile-solid.result-tile-ng { background: var(--c-ng-solid); border-color: var(--c-ng-solid); }
+.result-tile-solid.result-tile-ok *, .result-tile-solid.result-tile-ng * { color: #fff; }
+
+.result-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.point-table .ant-table-cell { font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* Filters. */
+.filter-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.filter-field > span { font-size: 14px; color: var(--c-navy-500); font-weight: 500; }
+
+.ant-tag { border-radius: 999px; }

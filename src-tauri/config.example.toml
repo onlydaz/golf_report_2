@@ -9,3 +9,21 @@ password = "postgres"
 # Created at startup if it does not exist, then the tables are created by the embedded migrations.
 dbname = "golf_report"
 max_connections = 5
+
+# Machine settings shown on the monitor (the PLC does not send them).
+# They drive the bend chart limits and labels only; OK/NG always comes from the PLC.
+# A station table written here replaces that station's defaults as a whole:
+# write every key, a key left out is shown as "not configured".
+[measurement.butt]
+load_kg = 2.5
+push_dist_mm = 10.0
+bend_min_mm = 50.0
+bend_max_mm = 200.0
+positions_mm = [150.0, 300.0, 450.0, 600.0]
+
+[measurement.tip]
+load_kg = 2.5
+push_dist_mm = 8.0
+bend_min_mm = 50.0
+bend_max_mm = 200.0
+positions_mm = [80.0]

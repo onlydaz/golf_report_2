@@ -1,0 +1,9 @@
+.stick-body { display: flex; flex-direction: column; gap: 16px; }
+.stick-kv { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; font-size: 14px; }
+.stick-kv dt { color: var(--c-navy-500); font-size: 12px; }
+.stick-kv dd { margin: 2px 0 0; font-weight: 600; color: var(--c-navy-800); font-variant-numeric: tabular-nums; }
+.station-head { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 16px; }
+.station-head small { font-size: 13px; font-weight: 400; color: var(--c-navy-500); }
+.stick-body .ant-table-cell { text-align: center; font-variant-numeric: tabular-nums; }
+.stick-body td.attempt-decided { background: #edf6ff !important; font-weight: 700; color: var(--c-navy-900); }
+.attempt-note { margin: 8px 0 0; font-size: 13px; color: var(--c-navy-500); }

@@ -1,16 +1,19 @@
 //! Polling loop: reads the control area periodically and, when DataReady
-//! goes 0 -> 1, reads and decodes record [0] of the data area.
+//! goes 0 -> 1, reads and decodes record [0] of the data area, hands it to
+//! `save` and then acknowledges it to the PLC:
+//!   1. PC_ReadCount = previous PC_ReadCount + 1
+//!   2. PC_ReadDone  = 1 (the PLC clears the record and writes it back to 0)
 //!
-//! Read only for now: nothing is written back to the PLC (no PC_ReadCount /
-//! PC_ReadDone / PC_Heartbeat).
+//! The PLC is acknowledged even when saving failed (`save` reports its own errors).
 
+use std::future::Future;
 use std::time::Duration;
 
 use tokio::time::{interval, MissedTickBehavior};
 
 use super::control::{read_control_area, ControlArea};
 use super::record::StickRecord;
-use super::registers::record;
+use super::registers::{control, record};
 use super::{PlcError, PlcHandle, PlcStatus};
 
 #[derive(Debug, Clone)]
@@ -19,7 +22,7 @@ pub enum PollEvent {
     Control(ControlArea),
     /// Record [0], read after a DataReady 0 -> 1 edge.
     Record(StickRecord),
-    /// A read failed; the loop keeps going.
+    /// A read or write failed; the loop keeps going.
     Error(PlcError),
 }
 
@@ -36,12 +39,38 @@ async fn read_record0(plc: &PlcHandle) -> Result<StickRecord, PlcError> {
     })
 }
 
+/// Write PC_ReadCount (DINT, low word first).
+pub async fn write_pc_read_count(plc: &PlcHandle, value: i32) -> Result<(), PlcError> {
+    let v = value as u32;
+    plc.write_multiple_registers(
+        control::START + control::PC_READ_COUNT,
+        vec![(v & 0xFFFF) as u16, (v >> 16) as u16],
+    )
+    .await
+}
+
+/// Tell the PLC the record is done: PC_ReadCount = `count`, then PC_ReadDone = 1.
+async fn ack(plc: &PlcHandle, count: i32) -> Result<(), PlcError> {
+    write_pc_read_count(plc, count).await?;
+    plc.write_single_register(control::START + control::PC_READ_DONE, 1).await
+}
+
 /// Run until the PLC actor stops.
-pub async fn run_poller(plc: PlcHandle, period: Duration, mut emit: impl FnMut(PollEvent)) {
+pub async fn run_poller<F, Fut>(
+    plc: PlcHandle,
+    period: Duration,
+    mut emit: impl FnMut(PollEvent),
+    mut save: F,
+) where
+    F: FnMut(StickRecord) -> Fut,
+    Fut: Future<Output = ()>,
+{
     let mut status = plc.subscribe_status();
     let mut tick = interval(period);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut prev_ready: Option<i16> = None;
+    // PC_ReadCount of a record already saved whose ack write failed.
+    let mut pending_ack: Option<i32> = None;
 
     loop {
         // Only poll while connected.
@@ -59,11 +88,35 @@ pub async fn run_poller(plc: PlcHandle, period: Duration, mut emit: impl FnMut(P
             }
         };
         let now = ctrl.data_ready;
+        let read_count = ctrl.pc_read_count;
         emit(PollEvent::Control(ctrl));
+
+        // Retry only the ack; the record is already saved.
+        if let Some(count) = pending_ack {
+            match ack(&plc, count).await {
+                Ok(()) => pending_ack = None,
+                Err(PlcError::ActorStopped) => return,
+                Err(e) => emit(PollEvent::Error(e)),
+            }
+            prev_ready = Some(now);
+            continue;
+        }
 
         if is_rising(prev_ready, now) {
             match read_record0(&plc).await {
-                Ok(r) => emit(PollEvent::Record(r)),
+                Ok(r) => {
+                    emit(PollEvent::Record(r.clone()));
+                    save(r).await;
+                    let count = read_count.wrapping_add(1);
+                    match ack(&plc, count).await {
+                        Ok(()) => {}
+                        Err(PlcError::ActorStopped) => return,
+                        Err(e) => {
+                            pending_ack = Some(count);
+                            emit(PollEvent::Error(e));
+                        }
+                    }
+                }
                 Err(PlcError::ActorStopped) => return,
                 Err(e) => {
                     // Keep prev_ready at 0 so the next tick retries the read.
