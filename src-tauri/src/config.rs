@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "config.toml";
+/// Folder name under `~/.config` and `/etc` for installed builds.
+const APP_DIR: &str = "golf-report-v2";
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -121,7 +123,14 @@ fn find_file() -> Option<PathBuf> {
     let exe = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join(FILE_NAME)));
-    [cwd, exe].into_iter().flatten().find(|p| p.is_file())
+    // Installed builds (.deb/AppImage): the exe sits in /usr/bin or a temp mount,
+    // so also look in the per-user and system config directories.
+    let user = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .map(|d| d.join(APP_DIR).join(FILE_NAME));
+    let system = Some(PathBuf::from("/etc").join(APP_DIR).join(FILE_NAME));
+    [cwd, exe, user, system].into_iter().flatten().find(|p| p.is_file())
 }
 
 #[cfg(test)]
