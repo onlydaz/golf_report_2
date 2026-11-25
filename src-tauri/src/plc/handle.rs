@@ -3,8 +3,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 use super::actor::{PlcOp, PlcRequest, PlcValue};
 use super::{PlcError, PlcStatus};
 
-/// Max registers in one Modbus read request (FC03/FC04, spec limit).
-pub const MAX_READ_REGISTERS: u16 = 125;
+/// Max registers in one Modbus read request (FC03/FC04).
+/// The Modbus spec allows 125, but the Delta AS200 answers
+/// "Server device failure" (exception 4) above 100.
+pub const MAX_READ_REGISTERS: u16 = 100;
 
 /// Cheap, cloneable handle used to send requests to the PLC actor.
 #[derive(Clone)]

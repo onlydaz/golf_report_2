@@ -2,8 +2,7 @@
 
 use tauri::State;
 
-use super::control::ControlArea;
-use super::registers::control as reg;
+use super::control::{read_control_area, ControlArea};
 use super::{PlcError, PlcHandle, PlcStatus};
 
 #[tauri::command]
@@ -70,9 +69,5 @@ pub async fn plc_write_registers(
 /// Read and decode the control area D25000..D25019.
 #[tauri::command]
 pub async fn plc_read_control_area(plc: State<'_, PlcHandle>) -> Result<ControlArea, PlcError> {
-    let words = plc.read_holding_registers(reg::START, reg::LEN).await?;
-    ControlArea::decode(&words).ok_or_else(|| PlcError::Exception {
-        code: 0,
-        message: format!("expected {} registers, got {}", reg::LEN, words.len()),
-    })
+    read_control_area(&plc).await
 }

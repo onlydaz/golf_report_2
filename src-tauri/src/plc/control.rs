@@ -4,7 +4,9 @@
 
 use serde::Serialize;
 
-use super::registers::control::{self as reg, LEN};
+use super::decode::{dint, int};
+use super::registers::control::{self as reg, LEN, START};
+use super::{PlcError, PlcHandle};
 
 /// Decoded control area. INT = i16, DINT = i32 (low word at the lower address).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,9 +33,8 @@ impl ControlArea {
         if w.len() < LEN as usize {
             return None;
         }
-        let int = |o: u16| w[o as usize] as i16;
-        // DINT: low word at the lower address.
-        let dint = |o: u16| ((w[o as usize + 1] as u32) << 16 | w[o as usize] as u32) as i32;
+        let int = |o| int(w, o);
+        let dint = |o| dint(w, o);
         Some(Self {
             format_version: int(reg::FORMAT_VERSION),
             record_size: int(reg::RECORD_SIZE),
@@ -49,6 +50,15 @@ impl ControlArea {
             raw: w[..LEN as usize].to_vec(),
         })
     }
+}
+
+/// Read and decode the control area from the PLC.
+pub async fn read_control_area(plc: &PlcHandle) -> Result<ControlArea, PlcError> {
+    let words = plc.read_holding_registers(START, LEN).await?;
+    ControlArea::decode(&words).ok_or_else(|| PlcError::Exception {
+        code: 0,
+        message: format!("expected {LEN} registers, got {}", words.len()),
+    })
 }
 
 #[cfg(test)]

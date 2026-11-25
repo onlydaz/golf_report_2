@@ -13,7 +13,8 @@ use tokio_modbus::{ExceptionCode, Request, Response};
 
 use super::*;
 
-const REG_COUNT: usize = 300;
+/// Covers the X212PI data table D25000..D25499.
+const REG_COUNT: usize = 25500;
 /// Reading this address makes the fake PLC stall, to keep a request in flight.
 const SLOW_ADDR: u16 = 100;
 
@@ -36,8 +37,8 @@ impl Service for FakePlc {
                     sleep(Duration::from_secs(5)).await;
                     Ok(Response::ReadHoldingRegisters(vec![0]))
                 }
-                // Same limit as a real Modbus server.
-                Request::ReadHoldingRegisters(_, cnt) if cnt > 125 => Err(ExceptionCode::IllegalDataValue),
+                // Same limit and error as the real Delta AS200.
+                Request::ReadHoldingRegisters(_, cnt) if cnt > 100 => Err(ExceptionCode::ServerDeviceFailure),
                 Request::ReadHoldingRegisters(addr, cnt) => {
                     let regs = regs.lock().unwrap();
                     let (a, c) = (addr as usize, cnt as usize);
@@ -79,6 +80,7 @@ fn test_config(addr: SocketAddr) -> PlcConfig {
         reconnect_min: Duration::from_millis(50),
         reconnect_max: Duration::from_millis(200),
         queue_capacity: 16,
+        poll_interval: Duration::from_millis(20),
     }
 }
 
@@ -103,7 +105,7 @@ async fn read_write_and_exception_keeps_connection() {
     assert_eq!(plc.read_holding_registers(2, 3).await.unwrap(), vec![0, 1234, 0]);
 
     // Bad address => Modbus exception, connection still alive.
-    let err = plc.read_holding_registers(1000, 1).await.unwrap_err();
+    let err = plc.read_holding_registers(REG_COUNT as u16, 1).await.unwrap_err();
     assert!(matches!(err, PlcError::Exception { code: 0x02, .. }), "{err:?}");
     assert_eq!(plc.status(), PlcStatus::Connected);
 
@@ -161,16 +163,69 @@ async fn long_read_is_split_into_chunks() {
     let plc = spawn_plc_actor(test_config(addr));
     wait_for(&plc, |s| *s == PlcStatus::Connected).await;
 
-    // Values on both sides of the 125-register chunk boundary.
-    for (a, v) in [(10, 1), (134, 2), (135, 3), (249, 4)] {
+    // Values on both sides of the 100-register chunk boundaries.
+    for (a, v) in [(10, 1), (109, 2), (110, 3), (249, 4)] {
         plc.write_single_register(a, v).await.unwrap();
     }
     let words = plc.read_holding_registers(10, 240).await.unwrap();
     assert_eq!(words.len(), 240);
-    assert_eq!((words[0], words[124], words[125], words[239]), (1, 2, 3, 4));
+    assert_eq!((words[0], words[99], words[100], words[239]), (1, 2, 3, 4));
     assert_eq!(words.iter().filter(|&&w| w != 0).count(), 4);
 
     // Range past the end of the address space is rejected up front.
     let err = plc.read_holding_registers(65500, 200).await.unwrap_err();
     assert!(matches!(err, PlcError::Exception { code: 0x02, .. }), "{err:?}");
+}
+
+#[tokio::test]
+async fn poller_reads_record_on_rising_edge() {
+    use registers::{control, record};
+    use tokio::sync::mpsc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let _server = start_server(listener).await;
+
+    let cfg = test_config(addr);
+    let plc = spawn_plc_actor(cfg.clone());
+    wait_for(&plc, |s| *s == PlcStatus::Connected).await;
+
+    let ready = control::START + control::DATA_READY;
+    // DataReady already 1 at start + a marker StickNo in record [0].
+    plc.write_single_register(ready, 1).await.unwrap();
+    plc.write_single_register(record::start(0) + record::STICK_NO, 4242).await.unwrap();
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let poller = tokio::spawn(run_poller(plc.clone(), cfg.poll_interval, move |ev| {
+        let _ = tx.send(ev);
+    }));
+
+    // Wait for `n` control polls, collecting the records seen meanwhile.
+    async fn collect(rx: &mut mpsc::UnboundedReceiver<PollEvent>, n: usize) -> Vec<super::record::StickRecord> {
+        let mut recs = Vec::new();
+        let mut polls = 0;
+        while polls < n {
+            match timeout(Duration::from_secs(3), rx.recv()).await.unwrap().unwrap() {
+                PollEvent::Control(_) => polls += 1,
+                PollEvent::Record(r) => recs.push(r),
+                PollEvent::Error(e) => panic!("{e:?}"),
+            }
+        }
+        recs
+    }
+
+    // Already 1 at start: not an edge.
+    assert!(collect(&mut rx, 3).await.is_empty());
+
+    // 1 -> 0 -> 1: exactly one record.
+    plc.write_single_register(ready, 0).await.unwrap();
+    assert!(collect(&mut rx, 3).await.is_empty());
+    plc.write_single_register(ready, 1).await.unwrap();
+    let recs = collect(&mut rx, 3).await;
+    assert_eq!(recs.len(), 1);
+    assert_eq!(recs[0].stick_no, 4242);
+
+    // Staying at 1: no more reads.
+    assert!(collect(&mut rx, 3).await.is_empty());
+    poller.abort();
 }

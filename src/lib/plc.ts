@@ -55,3 +55,55 @@ export interface ControlArea {
 }
 
 export const readControlArea = () => invoke<ControlArea>("plc_read_control_area");
+
+/** Live control area, emitted by the backend poller every poll interval. */
+export function onControlArea(cb: (c: ControlArea) => void): Promise<UnlistenFn> {
+  return listen<ControlArea>("plc://control", (e) => cb(e.payload));
+}
+
+/** Read error from the backend poller (the loop keeps running). */
+export function onPollError(cb: (e: PlcError) => void): Promise<UnlistenFn> {
+  return listen<PlcError>("plc://poll-error", (e) => cb(e.payload));
+}
+
+export interface Attempt {
+  /** mm */ pushDist: number;
+  /** mm */ bend: number;
+}
+
+export interface Point {
+  /** 0 not measured, 1 OK, 2 NG */
+  result: number;
+  attemptCount: number;
+  decideAttempt: number;
+  /** mm */ position: number;
+  attempts: Attempt[];
+}
+
+export interface Station {
+  /** 0 not measured, 1 OK, 2 NG */
+  result: number;
+  pointCount: number;
+  ngPoint: number;
+  /** g */ load: number;
+  points: Point[];
+}
+
+/** Decoded record [0] (D25020..D25259), sheet Cau_truc_ban_ghi. */
+export interface StickRecord {
+  version: number;
+  status: { raw: number; valid: boolean; buttChecked: boolean; tipChecked: boolean; overallOk: boolean };
+  stickNo: number;
+  productCode: string;
+  /** 0 none, 1 OK, 2 NG */
+  overallResult: number;
+  recordSeq: number;
+  butt: Station;
+  tip: Station;
+  raw: number[];
+}
+
+/** Record [0], emitted when DataReady goes 0 -> 1. */
+export function onRecord(cb: (r: StickRecord) => void): Promise<UnlistenFn> {
+  return listen<StickRecord>("plc://record", (e) => cb(e.payload));
+}

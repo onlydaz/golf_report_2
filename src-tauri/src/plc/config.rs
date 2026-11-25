@@ -16,6 +16,8 @@ pub struct PlcConfig {
     pub reconnect_max: Duration,
     /// Capacity of the request buffer.
     pub queue_capacity: usize,
+    /// Period of the control-area polling loop.
+    pub poll_interval: Duration,
 }
 
 impl Default for PlcConfig {
@@ -28,6 +30,7 @@ impl Default for PlcConfig {
             reconnect_min: Duration::from_secs(1),
             reconnect_max: Duration::from_secs(10),
             queue_capacity: 64,
+            poll_interval: Duration::from_millis(500),
         }
     }
 }

@@ -2,7 +2,7 @@ mod plc;
 
 use tauri::{Emitter, Manager};
 
-use plc::{commands::*, spawn_plc_actor, PlcConfig};
+use plc::{commands::*, run_poller, spawn_plc_actor, PlcConfig, PollEvent};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -17,7 +17,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
-            let plc = spawn_plc_actor(PlcConfig::default());
+            let cfg = PlcConfig::default();
+            let poll_interval = cfg.poll_interval;
+            let plc = spawn_plc_actor(cfg);
 
             // Forward connection status changes to the frontend.
             let mut status_rx = plc.subscribe_status();
@@ -31,6 +33,16 @@ pub fn run() {
                     }
                 }
             });
+
+            // Poll the control area; read record [0] on DataReady 0 -> 1.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(run_poller(plc.clone(), poll_interval, move |ev| {
+                let _ = match ev {
+                    PollEvent::Control(c) => app_handle.emit("plc://control", c),
+                    PollEvent::Record(r) => app_handle.emit("plc://record", r),
+                    PollEvent::Error(e) => app_handle.emit("plc://poll-error", e),
+                };
+            }));
 
             app.manage(plc);
             Ok(())
