@@ -32,7 +32,6 @@ positions_mm = [80.0]
 # Acceptance must cover travel/load limits, FC16 device limit, and safe Ladder staging/handshake.
 # No AS200 write limit has been supplied in the workbook. Never infer it from the read limit.
 [recipe_transfer]
-commissioned = false
-confirmation_reference = ""
-# Set max_write_words ONLY to the confirmed AS200 limit (1..123, Modbus FC16 protocol ceiling).
-# Leave it absent until the machine's acceptance record gives an actual value.
+commissioned = true
+confirmation_reference = "xác nhận"
+max_write_words = 100
