@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "golf-report-v2",
+  "productName": "Phần mềm thu thập dữ liệu độ cong gậy golf",
   "version": "0.1.0",
   "identifier": "com.golfreport.app",
   "build": {
