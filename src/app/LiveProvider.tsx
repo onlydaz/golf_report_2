@@ -1,5 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { db, onDbError, onDbStatus, onSaved, type AppInfo, type DbStatus } from "../lib/db";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { db, errorText, onDbError, onDbStatus, onSaved, type AppInfo, type DbStatus } from "../lib/db";
+import { confirmedRecipeHandshake, matchActiveRecipe, recipeApi, type Recipe, type RecipeHandshake, type RecipePlcStatus } from "../lib/recipe";
+import { useQuery } from "../lib/useQuery";
 import {
   onControlArea,
   onPlcStatus,
@@ -43,6 +45,17 @@ interface LiveControl {
 }
 
 const LiveContext = createContext<Live | null>(null);
+const RecipeContext = createContext<{
+  status?: RecipePlcStatus;
+  confirmed?: { handshake: RecipeHandshake; readAt: Date };
+  isLive: boolean;
+  customer?: string;
+  recipe?: Recipe;
+  recipeError: string;
+  applying: boolean;
+  setApplying: (value: boolean) => void;
+  refreshRecipe: () => void;
+} | null>(null);
 const DiagnosticsContext = createContext<{
   diagnostics: PlcDiagnostics | null; diagnosticsError: string; clearLog: () => Promise<void>;
 } | null>(null);
@@ -54,6 +67,55 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [last, setLast] = useState<LiveRecord | null>(null);
   const [savedTick, setSavedTick] = useState(0);
+  const [recipeApplying, setRecipeApplying] = useState(false);
+  const [recipeSnapshot, setRecipeSnapshot] = useState<{ connection: PlcStatus; status: RecipePlcStatus }>();
+  const recipeRead = useRef<Promise<RecipePlcStatus> | undefined>(undefined);
+  const [confirmedRecipe, setConfirmedRecipe] = useState<{ handshake: RecipeHandshake; readAt: Date }>();
+  const [recipeRefresh, setRecipeRefresh] = useState(0);
+  const refreshRecipe = useCallback(() => setRecipeRefresh(n => n + 1), []);
+  const setApplying = useCallback((value: boolean) => {
+    setRecipeSnapshot(undefined); // A completed transfer needs a fresh read, even on the same connection.
+    setRecipeApplying(value);
+  }, []);
+  const recipeStatus = !recipeApplying && plcStatus?.state === "connected" && recipeSnapshot?.connection === plcStatus
+    ? recipeSnapshot.status : undefined;
+
+  // One shared read loop for all pages. No reads while disconnected or transferring.
+  useEffect(() => {
+    if (plcStatus?.state !== "connected" || recipeApplying) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        // A previous effect may still have a read in flight; discard it before starting another.
+        await recipeRead.current?.catch(() => undefined);
+        if (!active) return;
+        const request = recipeApi.plcStatus();
+        recipeRead.current = request;
+        const status = await request;
+        if (!active) return;
+        setRecipeSnapshot({ connection: plcStatus, status });
+        const handshake = confirmedRecipeHandshake(status);
+        if (handshake) setConfirmedRecipe({ handshake, readAt: new Date() });
+      } catch (e) {
+        if (active) setRecipeSnapshot({ connection: plcStatus, status: {
+          handshake: null, busy: false, needsReconcile: false, commissioned: false,
+          maxWriteWords: null, confirmationReference: "",
+          blockedReason: `Không đọc được điều kiện nạp PLC: ${errorText(e)}`, readError: errorText(e),
+        } });
+      } finally {
+        if (active) timer = setTimeout(poll, 2000);
+      }
+    };
+    void poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, [plcStatus, recipeApplying]);
+
+  const activeSku = confirmedRecipe?.handshake.actSku;
+  const activeRev = confirmedRecipe?.handshake.actRev;
+  // DB queries follow identity, save and connection changes, not each PLC poll or measurement.
+  const activeRecipe = useQuery(dbStatus.connected && !!activeSku && !recipeApplying,
+    () => recipeApi.get(activeSku!), [activeSku, activeRev, recipeRefresh, plcStatus], false);
   const [diagnostics, setDiagnostics] = useState<PlcDiagnostics | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const receiveDiagnostics = (next: PlcDiagnostics) => {
@@ -105,10 +167,19 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     () => ({ plcStatus, dbStatus, info, last, savedTick }),
     [plcStatus, dbStatus, info, last, savedTick],
   );
+  const liveRecipe = useMemo(() => ({ status: recipeStatus, confirmed: confirmedRecipe,
+    isLive: !!confirmedRecipeHandshake(recipeStatus), customer: activeRecipe.data?.customer,
+    recipe: matchActiveRecipe(confirmedRecipe?.handshake, activeRecipe.data), recipeError: activeRecipe.error,
+    applying: recipeApplying, setApplying, refreshRecipe }),
+  [recipeStatus, confirmedRecipe, activeRecipe.data, activeRecipe.error, recipeApplying, setApplying, refreshRecipe]);
   return (
     <LiveContext.Provider value={live}>
       <ControlContext.Provider value={control}>
-        <DiagnosticsContext.Provider value={{ diagnostics, diagnosticsError, clearLog }}>{children}</DiagnosticsContext.Provider>
+        <DiagnosticsContext.Provider value={{ diagnostics, diagnosticsError, clearLog }}>
+          <RecipeContext.Provider value={liveRecipe}>
+            {children}
+          </RecipeContext.Provider>
+        </DiagnosticsContext.Provider>
       </ControlContext.Provider>
     </LiveContext.Provider>
   );
@@ -121,6 +192,11 @@ export function useLive(): Live {
 }
 
 export const useControl = () => useContext(ControlContext);
+export function useLiveRecipe() {
+  const value = useContext(RecipeContext);
+  if (!value) throw new Error("useLiveRecipe outside LiveProvider");
+  return value;
+}
 export function usePlcDiagnostics() {
   const value = useContext(DiagnosticsContext);
   if (!value) throw new Error("usePlcDiagnostics outside LiveProvider");

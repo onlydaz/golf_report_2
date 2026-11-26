@@ -1,0 +1,27 @@
+.recipe-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.recipe-page .section-card > .ant-card-body { padding: 16px; }
+.recipe-page .page-heading { margin-bottom: 0; }
+.recipe-selection { display: flex; align-items: end; flex-wrap: wrap; gap: 16px; }
+.recipe-selection .filter-field { min-width: 180px; }
+.recipe-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-left: auto; }
+.recipe-summary strong { font-family: var(--font-display); font-size: 22px; color: var(--c-primary); }
+.recipe-help { color: var(--c-navy-500); }
+.recipe-station { display: flex; flex-direction: column; gap: 12px; }
+.recipe-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.recipe-page .ant-input-number { width: 100%; }
+.recipe-page .ant-input-number-input { text-align: center; font-variant-numeric: tabular-nums; }
+.recipe-points .ant-table-thead > tr > th { text-align: center; background: var(--c-surface-muted); }
+.recipe-points .ant-table-cell { padding: 10px !important; }
+.recipe-points small { display: block; font-size: 10px; color: var(--c-navy-400); }
+.recipe-point-unused { opacity: .5; background: var(--c-surface-muted); }
+.recipe-help { margin: 0; font-size: 13px; line-height: 1.6; }
+.recipe-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px; background: white; border: 1px solid var(--c-border); border-radius: 12px; }
+.recipe-actions > span { color: var(--c-navy-500); font-size: 13px; }
+.recipe-errors { margin: 0; padding-left: 18px; }
+.recipe-plc-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.recipe-plc-summary + .recipe-help { margin-top: 8px; }
+.recipe-plc-summary > div { display: flex; flex-direction: column; gap: 6px; }
+.recipe-plc-summary span { color: var(--c-navy-500); }
+.recipe-plc-summary strong { color: var(--c-primary); overflow-wrap: anywhere; }
+.recipe-plc-condition, .recipe-reconcile { margin-top: 12px; }
+@media (max-width: 1100px) { .recipe-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

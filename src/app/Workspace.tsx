@@ -4,6 +4,7 @@ import Monitor from "../pages/Monitor/Monitor";
 import History from "../pages/History/History";
 import Reports from "../pages/Reports/Reports";
 import PlcConnection from "../pages/PlcConnection/PlcConnection";
+import Recipe from "../pages/Recipe/Recipe";
 import MeasurementDetail from "../pages/MeasurementDetail/MeasurementDetail";
 import type { MeasurementNavigation } from "../lib/useOpenStick";
 
@@ -31,6 +32,7 @@ export default function Workspace() {
         <Route path="/history" element={<History />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/plc" element={<PlcConnection />} />
+        <Route path="/recipe" element={<Recipe />} />
         <Route path="/measurements/:id" element={null} />
         <Route path="*" element={<Navigate to="/monitor" replace />} />
       </Routes>

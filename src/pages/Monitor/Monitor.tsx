@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, Empty, Spin, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router";
-import { useControl, useLive, type SaveState } from "../../app/LiveProvider";
+import { useControl, useLive, useLiveRecipe, type SaveState } from "../../app/LiveProvider";
 import BendChart from "../../components/BendChart";
 import PageHeader from "../../components/PageHeader";
 import PointTable from "../../components/PointTable";
@@ -11,7 +11,7 @@ import { useOpenStick } from "../../lib/useOpenStick";
 import { useQuery } from "../../lib/useQuery";
 import { db, type StickPage, type StickRow, type StickStats } from "../../lib/db";
 import { type StickRecord } from "../../lib/plc";
-import { fmtInt, fmtKg, fmtNum, fmtRate, fmtTime } from "../../lib/format";
+import { fmtDateTime, fmtInt, fmtKg, fmtNum, fmtRate, fmtTime } from "../../lib/format";
 import "./Monitor.css";
 
 const RECENT_PAGE_SIZE = 6;
@@ -195,6 +195,7 @@ function RecentTable({
 
 export default function Monitor() {
   const { dbStatus, info, last, savedTick } = useLive();
+  const active = useLiveRecipe();
   const connected = dbStatus.connected;
   const [recentPage, setRecentPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
@@ -212,7 +213,7 @@ export default function Monitor() {
       ? { record: newest.data.record, receivedAt: newest.data.receivedAt, save: { state: "saved" as const, id: newest.data.id } }
       : undefined;
 
-  const sku = current?.record.productCode || undefined;
+  const sku = active.confirmed?.handshake.actSku || undefined;
   const chart = useQuery(connected && !!sku, () => db.list({ productCode: sku }, 1, CHART_SIZE), [sku, savedTick, refresh], false);
   const error = stats.error || recent.error || chart.error || newest.error;
 
@@ -224,7 +225,12 @@ export default function Monitor() {
       <section className="monitor-top" aria-label="Tổng quan">
         <Card className="section-card">
           <div className="kicker">SKU đang chạy</div>
-          <strong className="monitor-sku">{sku ?? "N/A"}</strong>
+          <strong className="monitor-sku">{sku ?? "0"}</strong>
+          <div>Khách hàng: {active.customer || "0"}</div>
+          {active.isLive && <Tag color="green">Trực tiếp từ PLC</Tag>}
+          {!active.isLive && active.confirmed && <small className="monitor-recipe-note">
+            Giá trị xác nhận gần nhất: {fmtDateTime(active.confirmed.readAt)}
+          </small>}
         </Card>
         <PlcStateCard />
         <SummaryCards stats={stats.data} loading={stats.loading} startedAt={info?.startedAt} />
@@ -243,7 +249,10 @@ export default function Monitor() {
             )
           }
         />
-        <BendChart rows={chart.data?.items ?? []} settings={info?.measurement} loading={chart.loading} sku={sku} />
+        <BendChart rows={chart.data?.items ?? []} loading={chart.loading} sku={sku}
+          recipe={active.recipe} recipeNote={!active.recipe ? "Chưa đồng bộ công thức"
+            : !active.isLive ? "Thông số theo trạng thái PLC xác nhận gần nhất, chưa có xác nhận trực tiếp mới." : undefined}
+          recipeError={active.recipeError} />
       </section>
 
       <RecentTable

@@ -2,6 +2,7 @@ mod app_info;
 mod config;
 mod db;
 mod plc;
+mod recipe;
 
 use tauri::{Emitter, Manager};
 
@@ -29,6 +30,7 @@ pub fn run() {
             }
             let started_at = chrono::Utc::now();
             let app_cfg = AppConfig::load();
+            app.manage(recipe::transfer::RecipeTransfer::new(app_cfg.recipe_transfer));
             // Saves records to Postgres; creates the database and tables if missing.
             let db_status = db::DbStatusState::default();
             let db_pool = db::DbPool::default();
@@ -127,6 +129,12 @@ pub fn run() {
             db::commands::report_summary,
             db::commands::report_export_batch,
             app_info::app_info,
+            recipe::commands::recipe_list,
+            recipe::commands::recipe_get,
+            recipe::commands::recipe_save,
+            recipe::commands::recipe_apply,
+            recipe::commands::recipe_plc_status,
+            recipe::commands::recipe_reconcile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

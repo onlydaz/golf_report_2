@@ -1,9 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Card, Empty, Select, Spin } from "antd";
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { StationSettings, StickRow } from "../lib/db";
+import { Card, Empty, Select, Spin, Tooltip as InfoTooltip } from "antd";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { StickRow } from "../lib/db";
 import { fmtDateTime, fmtNum } from "../lib/format";
-import { colors, pointColors } from "../theme/tokens";
+import { recipeLoadsKg, type Recipe } from "../lib/recipe";
+import { pointColors } from "../theme/tokens";
 import type { StationKey } from "./stick";
 import "./BendChart.css";
 
@@ -24,55 +25,50 @@ export function bendScale(values: (number | null | undefined)[], limits: (number
 }
 type Datum = { id: number; stickNo: number; receivedAt: string } & Record<(typeof KEYS)[number], number | null>;
 
-const exceeds = (v: number | null | undefined, s?: StationSettings) =>
-  finite(v) && s != null && ((finite(s.bendMinMm) && v < s.bendMinMm) || (finite(s.bendMaxMm) && v > s.bendMaxMm));
-
-const num = (v: number | null | undefined, unit: string) => (!finite(v) ? "Chưa cấu hình" : `${fmtNum(v)} ${unit}`);
-
-function limitText(s?: StationSettings) {
-  if (!s || (s.bendMinMm == null && s.bendMaxMm == null)) return "Chưa cấu hình";
-  if (s.bendMinMm == null) return `≤ ${num(s.bendMaxMm, "mm")}`;
-  if (s.bendMaxMm == null) return `≥ ${num(s.bendMinMm, "mm")}`;
-  return `${s.bendMinMm.toLocaleString("vi-VN")} - ${s.bendMaxMm.toLocaleString("vi-VN")} mm`;
+export function chartRowsForSku(rows: StickRow[], sku?: string): StickRow[] {
+  return sku ? rows.filter(row => row.productCode === sku).slice(0, 30) : [];
 }
 
-function Dot(props: { cx?: number; cy?: number; value?: number | null; color: string; settings?: StationSettings; radius: number }) {
-  const { cx, cy, value, color, settings, radius } = props;
+function Dot(props: { cx?: number; cy?: number; value?: number | null; color: string; radius: number }) {
+  const { cx, cy, value, color, radius } = props;
   if (cx == null || cy == null || !finite(value)) return <g />;
-  return (
-    <g>
-      {exceeds(value, settings) && <circle cx={cx} cy={cy} r={8} fill="none" stroke={colors.limit} strokeWidth={2} />}
-      <circle cx={cx} cy={cy} r={radius} fill={color} />
-    </g>
-  );
+  return <circle cx={cx} cy={cy} r={radius} fill={color} />;
 }
 
 /** Bend of the deciding attempt per point, for the given sticks (newest first, as queried). */
 export default function BendChart({
   rows,
-  settings,
   loading,
   sku,
+  recipe,
+  recipeNote,
+  recipeError,
 }: {
   rows: StickRow[];
-  settings?: { butt: StationSettings; tip: StationSettings };
   loading: boolean;
   sku?: string;
+  recipe?: Recipe;
+  recipeNote?: string;
+  recipeError?: string;
 }) {
   const [station, setStation] = useState<StationKey>("BUTT");
-  const raw = settings ? (station === "BUTT" ? settings.butt : settings.tip) : undefined;
-  const validOrder = !finite(raw?.bendMinMm) || !finite(raw?.bendMaxMm) || raw.bendMinMm <= raw.bendMaxMm;
-  const s = raw ? { ...raw, bendMinMm: validOrder && finite(raw.bendMinMm) ? raw.bendMinMm : null,
-    bendMaxMm: validOrder && finite(raw.bendMaxMm) ? raw.bendMaxMm : null } : undefined;
-  const actualPoints = rows.reduce((n, r) => Math.max(n, ...r.tipBends.map((v, i) => finite(v) ? i + 1 : 0)), 1);
-  const pointCount = station === "BUTT" ? 4 : Math.max(actualPoints, s?.positionsMm.length ?? 1);
+  const s = recipe?.stations[station === "BUTT" ? "butt" : "tip"];
+  const enabled = s?.enabled === 1;
+  const loads = recipeLoadsKg(s);
+  const uniformLoad = loads.length > 0 && loads.every(v => v === loads[0]);
+  const loadText = !loads.length ? "—" : uniformLoad ? fmtNum(loads[0], 3)
+    : `${fmtNum(Math.min(...loads), 3)}–${fmtNum(Math.max(...loads), 3)}`;
+  const matchingRows = useMemo(() => chartRowsForSku(rows, sku), [rows, sku]);
+  // Historical measurements determine which series exist, never the current recipe's point count.
+  const pointCount = station === "BUTT" ? 4 : matchingRows.reduce((n, r) =>
+    Math.max(n, ...r.tipBends.map((v, i) => finite(v) ? i + 1 : 0)), 1);
   const data: Datum[] = useMemo(
     () =>
-      rows.slice(0, 30).reverse().map((r) => {
+      [...matchingRows].reverse().map((r) => {
         const b = (station === "BUTT" ? r.buttBends : r.tipBends).map((v) => finite(v) ? v : null);
         return { id: r.id, stickNo: r.stickNo, receivedAt: r.receivedAt, p1: b[0], p2: b[1], p3: b[2], p4: b[3] };
       }),
-    [rows, station],
+    [matchingRows, station],
   );
   const keys = KEYS.slice(0, pointCount);
   const dense = data.length > 15;
@@ -87,7 +83,7 @@ export default function BendChart({
     scrollRef.current.scrollLeft = scrollRef.current.scrollWidth - scrollRef.current.clientWidth;
     lastScrolledRecord.current = recordKey;
   }, [newestId, sku, hasData]);
-  const { domain, ticks } = bendScale(data.flatMap((d) => keys.map((k) => d[k])), [s?.bendMinMm, s?.bendMaxMm]);
+  const { domain, ticks } = bendScale(data.flatMap((d) => keys.map((k) => d[k])), []);
 
   return (
     <Card
@@ -106,13 +102,16 @@ export default function BendChart({
       }
     >
       <div className="bend-settings">
-        <span>Lực đè<b>{num(s?.loadKg, "kg")}</b></span>
-        <span>Khoảng cách đẩy<b>{num(s?.pushDistMm, "mm")}</b></span>
-        <span>Giới hạn độ cong<b>{limitText(s)}</b></span>
-        <span>
-          Vị trí điểm đo<b>{s?.positionsMm.length ? `${s.positionsMm.map((v) => v.toLocaleString("vi-VN")).join(" · ")} mm` : "Chưa cấu hình"}</b>
-        </span>
+        <span>Số điểm đo<b>{enabled ? s.numPoints : "—"}</b></span>
+        <span>Lực đè cài đặt (kg)<InfoTooltip title={!uniformLoad && loads.length
+          ? loads.map((v, i) => <div key={i}>P{i + 1}: {fmtNum(v, 3)} kg</div>) : undefined}>
+          <b>{loadText}</b>
+        </InfoTooltip></span>
+        <span>Dung sai độ cong (mm)<b>{enabled ? fmtNum(s.bendTol) : "—"}</b></span>
+        <span>Số lần xoay tối đa<b>{enabled ? s.maxRot : "—"}</b></span>
       </div>
+      {recipeNote && <div className="bend-note" title={recipeError}>{recipeNote}</div>}
+      {s?.enabled === 0 && <div className="bend-note">Trạm {station} không sử dụng trong công thức đang áp dụng.</div>}
       <div className="bend-legend">
         {keys.map((k, i) => (
           <span key={k}>
@@ -120,10 +119,6 @@ export default function BendChart({
             Điểm {i + 1}
           </span>
         ))}
-        <span>
-          <i className="bend-limit-dot" />
-          Vượt giới hạn cài đặt
-        </span>
       </div>
       <Spin spinning={loading}>
         {hasData ? (
@@ -146,14 +141,6 @@ export default function BendChart({
                   label={{ value: "Độ cong (mm)", angle: -90, position: "insideLeft", offset: 0,
                     dx: 4, style: { textAnchor: "middle" } }}
                 />
-                {s?.bendMinMm != null && (
-                  <ReferenceLine y={s.bendMinMm} stroke={colors.limit} strokeDasharray="5 4"
-                    label={{ value: `Dưới ${s.bendMinMm.toLocaleString("vi-VN")}`, position: "insideBottomRight", fill: "#b42318", fontSize: 12 }} />
-                )}
-                {s?.bendMaxMm != null && (
-                  <ReferenceLine y={s.bendMaxMm} stroke={colors.limit} strokeDasharray="5 4"
-                    label={{ value: `Trên ${s.bendMaxMm.toLocaleString("vi-VN")}`, position: "insideTopRight", fill: "#b42318", fontSize: 12 }} />
-                )}
                 <Tooltip
                   content={({ active, label }) => {
                     const d = data.find((x) => x.id === Number(label));
@@ -162,12 +149,9 @@ export default function BendChart({
                       <div className="bend-tooltip">
                         <strong>{station} · Gậy {d.stickNo}</strong>
                         <div>{fmtDateTime(d.receivedAt)}</div>
-                        <div>Giới hạn: {limitText(s)}</div>
                         {keys.map((k, i) => (
-                          <div key={k} style={{ color: exceeds(d[k], s) ? colors.limit : pointColors[i] }}>
-                            P{i + 1}{finite(s?.positionsMm[i]) ? ` (${s!.positionsMm[i].toLocaleString("vi-VN")} mm)` : ""}: {d[k] == null ? "—" : `${fmtNum(d[k])} mm`}
-                            {finite(d[k]) && finite(s?.bendMinMm) && d[k]! < s!.bendMinMm! && ` · Dưới ${fmtNum(s!.bendMinMm! - d[k]!)} mm`}
-                            {finite(d[k]) && finite(s?.bendMaxMm) && d[k]! > s!.bendMaxMm! && ` · Vượt ${fmtNum(d[k]! - s!.bendMaxMm!)} mm`}
+                          <div key={k} style={{ color: pointColors[i] }}>
+                            P{i + 1}: {d[k] == null ? "—" : `${fmtNum(d[k])} mm`}
                           </div>
                         ))}
                       </div>
@@ -176,7 +160,7 @@ export default function BendChart({
                 />
                 {keys.map((k, i) => {
                   const dot = (p: { cx?: number; cy?: number; value?: number | null; index?: number }) => (
-                    <Dot key={`${k}-${p.index}`} {...p} color={pointColors[i]} settings={s} radius={dense ? 3 : 4} />
+                    <Dot key={`${k}-${p.index}`} {...p} color={pointColors[i]} radius={dense ? 3 : 4} />
                   );
                   return (
                     <Line key={k} type="linear" dataKey={k} name={`Điểm ${i + 1}`} stroke={pointColors[i]} strokeWidth={2.5}

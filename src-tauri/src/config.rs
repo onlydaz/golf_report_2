@@ -16,6 +16,7 @@ const APP_DIR: &str = "golf-report-v2";
 pub struct AppConfig {
     pub database: DbConfig,
     pub measurement: MeasurementConfig,
+    pub recipe_transfer: crate::recipe::transfer::TransferConfig,
 }
 
 /// Machine settings shown on the monitor (load, push distance, bend limits, point positions).

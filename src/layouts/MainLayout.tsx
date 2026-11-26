@@ -10,6 +10,7 @@ const items = [
   { key: "/history", icon: <span className="sidebar-number">2</span>, label: "Lịch sử" },
   { key: "/reports", icon: <span className="sidebar-number">3</span>, label: "Báo cáo" },
   { key: "/plc", icon: <span className="sidebar-number">4</span>, label: "Kết nối PLC" },
+  { key: "/recipe", icon: <span className="sidebar-number">5</span>, label: "Công thức đo" },
 ];
 
 function DatabaseBanner() {
