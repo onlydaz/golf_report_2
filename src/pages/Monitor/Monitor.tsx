@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, Empty, Spin, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router";
-import { useControl, useLive, useLiveRecipe, useProduction, type SaveState } from "../../app/LiveProvider";
+import { useControl, useLive, useProduction, type SaveState } from "../../app/LiveProvider";
 import BendChart from "../../components/BendChart";
 import PageHeader from "../../components/PageHeader";
 import PointTable from "../../components/PointTable";
@@ -13,7 +13,6 @@ import { db, type StickPage, type StickRow, type StickStats } from "../../lib/db
 import { type StickRecord } from "../../lib/plc";
 import { PLC_LOAD_SOURCE, fmtInt, fmtKg, fmtNum, fmtRate, fmtTime } from "../../lib/format";
 import "./Monitor.css";
-import { skuMismatch } from "../../lib/production";
 
 const RECENT_PAGE_SIZE = 6;
 const CHART_SIZE = 30;
@@ -196,7 +195,6 @@ function RecentTable({
 
 export default function Monitor() {
   const { dbStatus, info, last, savedTick } = useLive();
-  const active = useLiveRecipe();
   const production = useProduction();
   const connected = dbStatus.connected;
   const [recentPage, setRecentPage] = useState(1);
@@ -218,8 +216,6 @@ export default function Monitor() {
 
   const selection = production.snapshot?.selection;
   const sku = selection?.sku;
-  const mismatch = skuMismatch(current?.record.productCode, current?.plcProductCode);
-  const appliedMismatch = active.isLive ? skuMismatch(sku ?? "", active.confirmed?.handshake.actSku) : undefined;
   const error = stats.error || recent.error || chart.error || newest.error;
 
   return (
@@ -228,7 +224,6 @@ export default function Monitor() {
       {error && <Alert type="error" showIcon title={error} />}
       {production.snapshot?.error && <Alert type="error" showIcon title={production.snapshot.error} />}
       {!selection && <Alert type="warning" showIcon title="Chưa chọn SKU sản xuất. Kết quả mới sẽ được lưu với SKU trống cho đến khi chọn khách hàng và SKU tại Công thức đo." />}
-      {(mismatch || appliedMismatch) && <Alert type="warning" showIcon title={mismatch || appliedMismatch} />}
 
       <section className="monitor-top" aria-label="Tổng quan">
         <Card className="section-card">

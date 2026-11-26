@@ -8,8 +8,3 @@ export const productionApi = {
   select: (customer: string, sku: string) => invoke<ProductionSnapshot>("production_select", { customer, sku }),
   onChanged: (cb: (value: ProductionSnapshot) => void) => listen<ProductionSnapshot>("production://changed", e => cb(e.payload)),
 };
-
-export function skuMismatch(selected: string | undefined, plcSku: string | undefined): string | undefined {
-  if (selected === undefined || plcSku === undefined || selected === plcSku) return;
-  return `SKU không khớp: đã chọn ${selected || "chưa chọn"}, PLC trả ${plcSku || "trống"}. Hãy kiểm tra trước khi tiếp tục sản xuất; kết quả lưu theo SKU đã chọn lúc nhận.`;
-}

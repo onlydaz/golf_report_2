@@ -11,7 +11,6 @@ import { PLC_LOAD_SOURCE, fmtDateTime, fmtKg, fmtNum } from "../../lib/format";
 import type { Attempt, Point, StickRecord } from "../../lib/plc";
 import type { MeasurementNavigation } from "../../lib/useOpenStick";
 import "./MeasurementDetail.css";
-import { skuMismatch } from "../../lib/production";
 
 type PointRow = Point & { n: number };
 type AttemptRow = Attempt & { n: number };
@@ -89,8 +88,6 @@ export default function MeasurementDetail() {
     <PageHeader title="Chi tiết phép đo" extra={<Button icon={<ArrowLeftOutlined />}
       onClick={() => navigation?.background ? navigate(-1) : navigate(id === "live" ? "/monitor" : "/history", { replace: true })}>Quay lại</Button>} />
     {shownError ? <Alert type="error" showIcon title={shownError} /> : !shown ? <Spin /> : <>
-      {skuMismatch(shown.record.productCode, shown.plcProductCode) &&
-        <Alert type="warning" showIcon title={skuMismatch(shown.record.productCode, shown.plcProductCode)} />}
       <Card className="section-card" title="Thông tin chung">
         <dl className="measurement-info">
           <div><dt>Mã phép đo</dt><dd>{id === "live" ? "Bản ghi live · Chưa có mã lưu" : `#${id}`}</dd></div>

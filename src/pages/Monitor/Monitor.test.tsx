@@ -35,13 +35,13 @@ describe("monitor active SKU", () => {
     vi.mocked(useControl).mockReturnValue({ control: null, lastPoll: null, pollError: null });
   });
 
-  it("shows only the selected SKU in its card and keeps the PLC mismatch warning", () => {
+  it("shows only the selected SKU in its card without a PLC mismatch warning", () => {
     const html = render();
     expect(html).toContain('<strong class="monitor-sku">MH1287S</strong>');
     expect(html).not.toContain("Khách hàng:");
     expect(html).not.toContain("Người vận hành chọn");
     expect(html).not.toContain("PLC đã áp dụng:");
-    expect(html).toContain("SKU không khớp");
+    expect(html).not.toContain("SKU không khớp");
     vi.mocked(useLive).mockReturnValue({ ...live(), last: lastRecord() });
     expect(render()).toContain('<strong class="monitor-sku">MH1287S</strong>');
   });
@@ -85,14 +85,16 @@ describe("monitor active SKU", () => {
     }
   });
 
-  it("warns about the captured measurement mismatch even if selection changes later", () => {
+  it.each(["PLC-OTHER", ""])("keeps the selected SKU and captured measurement without warning for PLC code %j", plcProductCode => {
     const last = lastRecord();
     last.record.productCode = "MH1253R";
-    last.plcProductCode = "PLC-OTHER";
+    last.plcProductCode = plcProductCode;
     vi.mocked(useLive).mockReturnValue({ ...live(), last });
     const html = render();
-    expect(html).toContain("đã chọn MH1253R, PLC trả PLC-OTHER");
+    expect(html).not.toContain("SKU không khớp");
     expect(html).toContain('<strong class="monitor-sku">MH1287S</strong>');
+    expect(last.record.productCode).toBe("MH1253R");
+    expect(last.plcProductCode).toBe(plcProductCode);
   });
 
   it("queries 30 saved sticks without an SKU filter while PLC is disconnected and no ActSKU exists", () => {

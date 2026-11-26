@@ -4,7 +4,6 @@ import { useBlocker } from "react-router";
 import { isTauri } from "@tauri-apps/api/core";
 import PageHeader from "../../components/PageHeader";
 import { useLive, useLiveRecipe, useProduction } from "../../app/LiveProvider";
-import { skuMismatch } from "../../lib/production";
 import { errorText } from "../../lib/db";
 import { recipeApi, recipeErrors, recipeApplyBlockReason, transferFailure } from "../../lib/recipe";
 import type { Recipe as RecipeData, RecipePoint, RecipeStation, RecipeSummary, StationName, RecipeTransferReport } from "../../lib/recipe";
@@ -218,8 +217,6 @@ export default function Recipe() {
       </div>
     </Card>
     {production.snapshot?.error && <Alert type="error" showIcon title={production.snapshot.error} />}
-    {plcConnected && skuMismatch(production.snapshot?.selection?.sku ?? "", plcRecipe?.handshake?.actSku) &&
-      <Alert type="warning" showIcon title={skuMismatch(production.snapshot?.selection?.sku ?? "", plcRecipe?.handshake?.actSku)} />}
     {loadError && <Alert type="error" showIcon title="Không tải được công thức" description={loadError} />}
     {saveError && <Alert type="error" showIcon title="Lưu công thức thất bại" description={saveError} />}
     <Card className="section-card" title="Công thức đang áp dụng trên PLC">
