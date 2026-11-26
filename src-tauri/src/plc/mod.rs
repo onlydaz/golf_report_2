@@ -6,6 +6,7 @@
 
 mod actor;
 pub mod commands;
+pub mod diagnostics;
 mod config;
 pub mod control;
 mod decode;

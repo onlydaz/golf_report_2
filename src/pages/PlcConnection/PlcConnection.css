@@ -1,0 +1,23 @@
+.plc-connection-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.plc-connection-page .page-heading { margin-bottom: 0; }
+.plc-connection-columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.plc-connection-page .section-card { background: #fff; border-radius: 12px; }
+.plc-connection-page .ant-card-head-title { font-size: 18px; }
+.plc-settings .ant-card-body { display: flex; flex-direction: column; gap: 18px; }
+.plc-settings .ant-input { min-height: 38px; }
+.plc-settings-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.plc-connection-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.plc-connection-right .ant-tag { margin-inline-end: 0; }
+.plc-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.plc-metrics > div { background: #f0f4f8; border-radius: 8px; padding: 12px; min-width: 0; }
+.plc-metrics dt { font-size: 12px; color: var(--c-navy-500); }
+.plc-metrics dd { margin: 6px 0 0; font-size: 18px; font-weight: 700; color: #1769aa; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.plc-connection-log { background: #102a43; border-radius: 8px; padding: 14px; height: 200px; overflow-y: auto; font-size: 13px; line-height: 1.6; }
+.plc-log-line { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; overflow-wrap: anywhere; }
+.plc-log-line > span { min-width: 0; }
+.plc-log-line i { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: currentColor; }
+.plc-log-connected { color: #86efac; }
+.plc-log-disconnected { color: #fca5a5; }
+.plc-log-connecting { color: #fde047; }
+.plc-log-empty { color: #bcccdc; }
+@media (max-width: 1100px) { .plc-connection-columns { grid-template-columns: minmax(0, 1fr); } }

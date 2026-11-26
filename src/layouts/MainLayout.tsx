@@ -1,12 +1,15 @@
 import { Alert, Layout, Menu } from "antd";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useLive } from "../app/LiveProvider";
+import type { MeasurementNavigation } from "../lib/useOpenStick";
 import logo from "../assets/logo-new-ocean.png";
 import "./MainLayout.css";
 
 const items = [
   { key: "/monitor", icon: <span className="sidebar-number">1</span>, label: "Giám sát" },
   { key: "/history", icon: <span className="sidebar-number">2</span>, label: "Lịch sử" },
+  { key: "/reports", icon: <span className="sidebar-number">3</span>, label: "Báo cáo" },
+  { key: "/plc", icon: <span className="sidebar-number">4</span>, label: "Kết nối PLC" },
 ];
 
 function DatabaseBanner() {
@@ -27,7 +30,10 @@ function DatabaseBanner() {
 
 export default function MainLayout() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, state } = useLocation();
+  const selectedPath = pathname.startsWith("/measurements/")
+    ? (state as MeasurementNavigation | null)?.background?.pathname ?? "/history"
+    : pathname;
   return (
     <Layout className="app-layout">
       <Layout.Sider width={220} className="main-sider">
@@ -40,7 +46,7 @@ export default function MainLayout() {
           </div>
         </div>
         <div className="side-section">CHỨC NĂNG CHÍNH</div>
-        <Menu theme="dark" mode="inline" selectedKeys={[pathname]} items={items} onClick={({ key }) => navigate(key)} />
+        <Menu theme="dark" mode="inline" selectedKeys={[selectedPath]} items={items} onClick={({ key }) => navigate(key)} />
       </Layout.Sider>
       <Layout>
         <Layout.Content className="main-content">

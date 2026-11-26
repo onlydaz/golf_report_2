@@ -1,4 +1,5 @@
 import { useLive } from "../app/LiveProvider";
+import type { ReactNode } from "react";
 
 function Pill({ tone, text, title }: { tone: "connected" | "error" | "unverified"; text: string; title?: string }) {
   return (
@@ -10,7 +11,7 @@ function Pill({ tone, text, title }: { tone: "connected" | "error" | "unverified
 }
 
 /** Page title with PLC / database status pills. */
-export default function PageHeader({ title }: { title: string }) {
+export default function PageHeader({ title, extra }: { title: string; extra?: ReactNode }) {
   const { plcStatus, dbStatus, info } = useLive();
   const ip = info?.plcAddr.replace(/:\d+$/, "") ?? "";
   return (
@@ -25,13 +26,14 @@ export default function PageHeader({ title }: { title: string }) {
           <Pill tone="unverified" text={`PLC ${ip} · Đang kết nối…`} />
         )}
         {dbStatus.connected ? (
-          <Pill tone="connected" text="CSDL · Đã kết nối" />
+          <Pill tone="connected" text="CSDL · Đã kết nối" title="Cơ sở dữ liệu · Đã kết nối" />
         ) : dbStatus.error ? (
           <Pill tone="error" text="CSDL · Mất kết nối" title={dbStatus.error} />
         ) : (
-          <Pill tone="unverified" text="CSDL · Đang kết nối…" />
+          <Pill tone="unverified" text="CSDL · Đang kết nối..." title="Cơ sở dữ liệu · Đang kết nối…" />
         )}
       </div>
+      {extra}
     </header>
   );
 }

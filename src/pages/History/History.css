@@ -28,6 +28,9 @@
 .history-stat-red strong, .history-ng { color: var(--c-ng-text); }
 
 .history-table .ant-table-cell { text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.history-table .ant-table-cell { padding: 10px 14px !important; }
+.history-stat { min-height: 112px; }
+.history-sku-table .ant-table-row:focus-visible { outline: 2px solid var(--c-primary); outline-offset: -2px; }
 .history-table .ant-table-thead > tr > th { color: var(--c-navy-700); font-weight: 600; }
 .history-table .ant-tag { margin-inline-end: 0; }
 .history-sku-table .ant-table-row { cursor: pointer; }
@@ -35,8 +38,18 @@
 .history-sku-table .history-sku-selected > td, .history-sku-table .history-sku-selected:hover > td { background: #edf6ff !important; }
 .history-sku-table .history-sku-selected > td:first-child { box-shadow: inset 3px 0 var(--c-primary); font-weight: 600; }
 
-@media (max-width: 1150px) {
+/* Match V1's generous detail rows while retaining V2's grouped headers. */
+.history-page .saved-stick-table .ant-table-cell { padding: 14px 16px !important; line-height: 1.5; }
+.history-page .saved-stick-table .ant-table-tbody > tr > td { height: 56px; }
+.history-page .saved-stick-table .ant-table-thead > tr > th.ant-table-cell { font-weight: 500; }
+.history-page .saved-stick-table .ant-table-thead > tr:first-child > th[colspan] { padding-bottom: 18px !important; }
+.history-page .saved-stick-table .ant-table-thead > tr:nth-child(2) > th { padding-top: 18px !important; }
+
+@media (max-width: 1400px) {
   .history-filter-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 850px) {
+  .history-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 1050px) {
   .history-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }

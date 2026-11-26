@@ -219,6 +219,7 @@ async fn poller_reads_record_on_rising_edge() {
         while polls < n {
             match timeout(Duration::from_secs(3), rx.recv()).await.unwrap().unwrap() {
                 PollEvent::Control(_) => polls += 1,
+                PollEvent::ReadDiagnostics { .. } => {},
                 PollEvent::Record(r) => recs.push(r),
                 PollEvent::Error(e) => panic!("{e:?}"),
             }

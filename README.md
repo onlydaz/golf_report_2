@@ -92,16 +92,63 @@ Chạy test:
 cd src-tauri && cargo test   # gồm test giả lập PLC bằng Modbus server
 ```
 
-## Đóng gói
+## Đóng gói và cài đặt trên Linux
+
+### 1. Build bộ cài
+
+Thực hiện trên máy **Linux** đã có Node/npm, Rust và thư viện hệ thống Tauri theo mục Yêu cầu. Chạy tại thư mục gốc project:
 
 ```bash
-npm run tauri build
+npm ci
+npm run tauri -- build --bundles deb
 ```
 
-Kết quả nằm trong `src-tauri/target/release/bundle/`:
+File `.deb` nằm trong `src-tauri/target/release/bundle/deb/`. Build cho cùng kiến trúc CPU với máy cài đặt, ví dụ x86_64. Lệnh build trên Windows tạo bộ cài Windows, không tạo `.deb` Linux.
 
-- **.deb**: cài bằng `sudo apt install ./golf-report-v2_*.deb`. File mẫu được cài vào `/usr/share/golf-report-v2/config.example.toml`. Sao chép file này sang `/etc/golf-report-v2/config.toml` (dùng chung cho cả máy) hoặc `~/.config/golf-report-v2/config.toml` (riêng từng user) rồi sửa.
-- **AppImage**: đặt `config.toml` cạnh file AppImage không có tác dụng vì app chạy từ thư mục mount tạm. Hãy đặt file vào `~/.config/golf-report-v2/` hoặc `/etc/golf-report-v2/`.
+### 2. Cài lên Ubuntu/Debian
+
+Chép file `.deb` sang máy đích, mở terminal tại thư mục chứa file rồi chạy:
+
+```bash
+sudo apt install ./golf-report-v2_*.deb
+```
+
+Chỉ để một phiên bản bộ cài phù hợp trong thư mục, hoặc thay phần `*` bằng tên file cụ thể. `apt` cài ứng dụng và các dependency cần thiết. Máy sử dụng không cần cài Node/npm hoặc Rust; cần kết nối được PostgreSQL và PLC.
+
+### 3. Thiết lập cấu hình trước lần mở đầu tiên
+
+Chạy bằng tài khoản người dùng sẽ mở ứng dụng:
+
+```bash
+report_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/golf-report-v2"
+mkdir -p "$report_config_dir"
+cp -n /usr/share/golf-report-v2/config.example.toml "$report_config_dir/config.toml"
+chmod 600 "$report_config_dir/config.toml"
+nano "$report_config_dir/config.toml"
+```
+
+Sửa thông tin `[database]` và thông số `[measurement]` cho máy thực tế, lưu rồi thoát. `cp -n` giữ cấu hình cũ nếu đã tồn tại. Cấu hình được đọc lại khi khởi động ứng dụng; địa chỉ PLC hiện vẫn lấy từ `src-tauri/src/plc/config.rs` lúc build.
+
+### 4. Mở bằng biểu tượng ứng dụng
+
+Sau khi cài `.deb`, mở menu **Ứng dụng / Show Applications**, tìm **golf-report-v2** rồi nhấn biểu tượng New Ocean. Có thể nhấp phải và chọn **Add to Favorites / Pin to Dash** để ghim ứng dụng. Bộ cài tự tạo launcher và cài icon; không cần chạy Vite hoặc `npm run tauri dev`.
+
+Nếu chưa thấy biểu tượng, đăng xuất rồi đăng nhập lại. Có thể mở từ terminal để xem lỗi khởi động:
+
+```bash
+golf-report-v2
+```
+
+Ứng dụng tự kết nối PLC và bắt đầu đọc khi kết nối thành công. Dùng lại lệnh `sudo apt install ./ten-file-moi.deb` khi cập nhật; cấu hình riêng của người dùng vẫn ở thư mục trên.
+
+**AppImage (tùy chọn):** build bằng `npm run tauri -- build --bundles appimage`, lấy file trong `src-tauri/target/release/bundle/appimage/`, cấp quyền rồi chạy:
+
+```bash
+chmod +x ./golf-report-v2_*.AppImage
+./golf-report-v2_*.AppImage
+```
+
+AppImage không tự thêm biểu tượng vào menu; dùng `.deb` nếu muốn cài và mở bằng launcher. Với AppImage, cấu hình vẫn đặt trong thư mục người dùng ở bước 3 hoặc `/etc/golf-report-v2/config.toml`; không đặt cạnh file AppImage vì executable chạy trong thư mục mount tạm. Nếu chưa cài `.deb`, lấy file mẫu từ `src-tauri/config.example.toml` của project.
 
 ## Cơ sở dữ liệu
 

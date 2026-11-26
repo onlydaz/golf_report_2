@@ -6,6 +6,24 @@ export type PlcStatus =
   | { state: "connected" }
   | { state: "disconnected"; reason: string };
 
+export interface PlcDiagnostics {
+  revision: number;
+  ip: string;
+  port: number;
+  unitId: number;
+  status: PlcStatus;
+  connectedAt: string | null;
+  readLatencyMs: number | null;
+  day: string;
+  readErrorsToday: number;
+  disconnectsToday: number;
+  logs: { at: string; tone: "connected" | "disconnected" | "connecting"; message: string; address: string }[];
+}
+
+export const getPlcDiagnostics = () => invoke<PlcDiagnostics>("plc_diagnostics");
+export const clearPlcConnectionLog = () => invoke<PlcDiagnostics>("plc_clear_connection_log");
+export const onPlcDiagnostics = (cb: (d: PlcDiagnostics) => void) => listen<PlcDiagnostics>("plc://diagnostics", (e) => cb(e.payload));
+
 /** Error returned by every PLC command (rejected promise value). */
 export interface PlcError {
   /** exception: PLC rejected the request (bad address...), still connected.

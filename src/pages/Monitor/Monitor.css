@@ -47,13 +47,33 @@ div.monitor-machine-error { margin-top: 6px; font-size: 12px; font-weight: 400; 
 .monitor-save-error { color: var(--c-ng-text); overflow-wrap: anywhere; }
 .monitor-open { margin-top: 10px; }
 
+/* Seven columns fit the desktop card; scroll only when the card is truly narrow. */
+.monitor-current .point-table .ant-table-content { overflow-x: auto; }
+.monitor-current .point-table table { width: 100%; min-width: 520px; }
+.monitor-current .point-table .ant-table-cell { padding: 10px 5px !important; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.monitor-current .point-table .ant-table-cell:first-child,
+.monitor-current .point-table .ant-table-thead .ant-table-cell { white-space: nowrap; }
+.monitor-current .point-table .ant-tag { margin-inline-end: 0; white-space: normal; }
+
 .monitor-recent .ant-table-row { cursor: pointer; }
 .monitor-recent .ant-table-cell { font-variant-numeric: tabular-nums; }
 .control-panel { background: #fff; }
+.monitor-top .kicker { line-height: 1.4; overflow-wrap: anywhere; }
+.monitor-count > .ant-card-body > strong { overflow-wrap: anywhere; }
+.monitor-counters > div, .monitor-counter-reset { flex-wrap: wrap; }
+.monitor-station-counts { flex-wrap: wrap; }
+.monitor-station-counts strong { overflow-wrap: anywhere; }
+.monitor-recent .ant-table-cell { text-align: center; padding: 10px 12px !important; font-size: 14px; white-space: nowrap; }
+.monitor-recent .ant-table-thead > tr > th.ant-table-cell { text-align: center; }
+.monitor-recent .ant-table-tbody > tr > td:nth-child(4) { text-align: left; }
+.monitor-recent .ant-tag { margin-inline-end: 0; }
 
 @media (max-width: 1250px) {
   .monitor-top { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 1000px) {
   .monitor-mid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 850px) {
+  .monitor-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -31,6 +31,8 @@ export interface StickFilter {
   productCode?: string;
   stickNo?: number;
   result?: ResultCode;
+  buttResult?: ResultCode;
+  tipResult?: ResultCode;
 }
 
 export interface StickStats {
@@ -97,6 +99,38 @@ export interface AppInfo {
   measurement: { butt: StationSettings; tip: StationSettings };
 }
 
+export interface PointSummary {
+  station: string; pointNo: number; positionMin: number | null; positionMax: number | null;
+  loadG: number | null; pushDistMm: number | null; bendMm: number | null;
+  samples: number; points: number; ok: number; ng: number;
+}
+
+export interface ReportSummary {
+  stats: StickStats;
+  retested: number;
+  daily: { day: string; total: number; ok: number; ng: number }[];
+  halfHour: { slot: string; total: number; ok: number; ng: number }[];
+  points: PointSummary[];
+  /** 0 below; 1..12 within inclusive limits; 13 above. */
+  histogram: { pointNo: number; bucket: number; count: number }[];
+  histogramLimits: [number, number] | null;
+  bendDistribution: { pointNo: number; count: number; mean: number | null; sampleStdDev: number | null }[];
+  invalidAttempts: number;
+  generatedAt: string;
+}
+
+export interface ExportPoint {
+  stickId: number; productCode: string; stickNo: number; station: string; pointNo: number;
+  positionMm: number | null; result: number; attemptCount: number; decideAttempt: number;
+}
+export interface ExportAttempt {
+  stickId: number; productCode: string; stickNo: number; station: string; pointNo: number;
+  attemptNo: number; pushDistMm: number | null; bendMm: number | null;
+}
+export interface ExportBatch {
+  maxId: number; nextId: number | null; sticks: StickRow[]; points: ExportPoint[]; attempts: ExportAttempt[];
+}
+
 export const db = {
   status: () => invoke<DbStatus>("db_status"),
   appInfo: () => invoke<AppInfo>("app_info"),
@@ -105,6 +139,11 @@ export const db = {
     invoke<StickPage>("stick_list", { filter, page, pageSize }),
   skus: (filter: StickFilter) => invoke<SkuSummary[]>("sku_summary", { filter }),
   detail: (id: number) => invoke<StickDetail | null>("stick_detail", { id }),
+  report: (filter: StickFilter) => invoke<ReportSummary>("report_summary", {
+    filter, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }),
+  exportBatch: (filter: StickFilter, afterId: number, maxId?: number) =>
+    invoke<ExportBatch>("report_export_batch", { filter, afterId, maxId }),
 };
 
 export const onDbStatus = (cb: (s: DbStatus) => void): Promise<UnlistenFn> =>

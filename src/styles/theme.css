@@ -92,3 +92,14 @@ body { margin: 0; min-width: 760px; background: var(--c-page-bg); }
 .filter-field > span { font-size: 14px; color: var(--c-navy-500); font-weight: 500; }
 
 .ant-tag { border-radius: 999px; }
+
+.section-card { min-width: 0; }
+.section-card .ant-card-head-wrapper { gap: 10px; flex-wrap: wrap; padding-block: 10px; }
+.section-card .ant-card-head-title { white-space: normal; overflow: visible; font-size: 18px; color: var(--c-navy-800); }
+.section-card .ant-card-extra { max-width: 100%; }
+.saved-stick-table .ant-table-cell, .point-table .ant-table-cell { padding: 10px 14px !important; font-size: 14px; font-variant-numeric: tabular-nums; }
+.saved-stick-table .ant-table-cell { text-align: center; padding: 9px 8px !important; white-space: nowrap; border-bottom-color: var(--c-border-soft); }
+.saved-stick-table .ant-table-thead > tr > th.ant-table-cell { color: var(--c-navy-700); text-align: center; }
+.saved-stick-table .ant-table-thead > tr > th::before { display: none; }
+.saved-stick-table .ant-tag { margin-inline-end: 0; }
+.saved-stick-table .ant-btn-link { height: 28px; padding-inline: 0; }

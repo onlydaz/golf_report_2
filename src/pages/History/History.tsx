@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, DatePicker, InputNumber, Select, Table } from "antd";
+import { useEffect, useState } from "react";
+import { Alert, Button, Card, DatePicker, Empty, InputNumber, Select, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import { useLive } from "../../app/LiveProvider";
 import PageHeader from "../../components/PageHeader";
-import { ResultTag } from "../../components/Result";
-import StickDrawer, { type StickSource } from "../../components/StickDrawer";
-import { db, type SkuSummary, type StickFilter, type StickRow } from "../../lib/db";
-import { fmtDateTime, fmtInt, fmtKg, fmtNum, fmtRate } from "../../lib/format";
+import StickTable from "../../components/StickTable";
+import { useOpenStick } from "../../lib/useOpenStick";
+import { db, type SkuSummary, type StickFilter } from "../../lib/db";
+import { fmtDateTime, fmtInt, fmtRate } from "../../lib/format";
 import { useQuery } from "../../lib/useQuery";
 import "./History.css";
 
@@ -53,12 +53,12 @@ export default function History() {
   const [reload, setReload] = useState(0);
   const [selected, setSelected] = useState<string>();
   const [page, setPage] = useState(1);
-  const [drawer, setDrawer] = useState<StickSource | null>(null);
+  const openStick = useOpenStick();
   const [filterError, setFilterError] = useState("");
 
   const skuOptions = useQuery(connected, () => db.skus({}), [reload]);
-  const stats = useQuery(connected, () => db.stats(filter), [filter, reload]);
-  const skus = useQuery(connected, () => db.skus(filter), [filter, reload]);
+  const stats = useQuery(connected, () => db.stats(filter), [filter, reload], false);
+  const skus = useQuery(connected, () => db.skus(filter), [filter, reload], false);
 
   // Keep the selected SKU if it is still in the result, else take the most recent one.
   const skuList = skus.data;
@@ -71,6 +71,7 @@ export default function History() {
     connected && selected !== undefined,
     () => db.list({ ...filter, productCode: selected }, page, PAGE_SIZE),
     [filter, selected, page, reload],
+    false,
   );
 
   const apply = () => {
@@ -79,53 +80,17 @@ export default function History() {
       return;
     }
     setFilterError("");
+    setSelected(undefined);
     setPage(1);
     setFilter(toFilter(draft));
   };
   const reset = () => {
     setDraft({});
+    setSelected(undefined);
     setFilterError("");
     setPage(1);
     setFilter({});
   };
-
-  const stickColumns = useMemo<ColumnsType<StickRow>>(
-    () => [
-      { title: "Thời gian đo", dataIndex: "receivedAt", render: fmtDateTime, width: 170 },
-      { title: "Số gậy", dataIndex: "stickNo", width: 90 },
-      {
-        title: "BUTT",
-        children: [
-          ...[0, 1, 2, 3].map((i) => ({
-            title: `P${i + 1} (mm)`,
-            key: `b${i}`,
-            render: (_: unknown, r: StickRow) => fmtNum(r.buttBends[i]),
-          })),
-          { title: "Lực đè (kg)", dataIndex: "buttLoadG", render: fmtKg },
-          { title: "KQ", dataIndex: "buttResult", render: (v) => <ResultTag value={v} /> },
-        ],
-      },
-      {
-        title: "TIP",
-        children: [
-          { title: "P1 (mm)", key: "t0", render: (_, r) => fmtNum(r.tipBends[0]) },
-          { title: "Lực đè (kg)", dataIndex: "tipLoadG", render: fmtKg },
-          { title: "KQ", dataIndex: "tipResult", render: (v) => <ResultTag value={v} /> },
-        ],
-      },
-      { title: "Overall", dataIndex: "overallResult", render: (v) => <ResultTag value={v} /> },
-      {
-        title: "",
-        key: "open",
-        render: (_, r) => (
-          <Button type="link" onClick={() => setDrawer({ id: r.id })}>
-            Xem chi tiết
-          </Button>
-        ),
-      },
-    ],
-    [],
-  );
 
   const s = stats.data;
   const cards: [string, string, string][] = [
@@ -235,16 +200,18 @@ export default function History() {
           loading={skus.loading}
           dataSource={skus.data}
           columns={skuColumns}
-          pagination={false}
+          pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }}
           scroll={{ x: 900 }}
           rowClassName={(r) => (r.productCode === selected ? "history-sku-selected" : "")}
           onRow={(r) => ({
+            tabIndex: 0,
+            onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(r.productCode); setPage(1); } },
             onClick: () => {
               setSelected(r.productCode);
               setPage(1);
             },
           })}
-          locale={{ emptyText: "Không có gậy nào theo bộ lọc." }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có gậy nào theo bộ lọc" /> }}
         />
       </Card>
 
@@ -253,21 +220,15 @@ export default function History() {
         title={selected !== undefined ? `Chi tiết gậy · ${selected || "Chưa gán SKU"}` : "Chi tiết gậy"}
         extra={<span className="history-note">Hiển thị {shownFrom}–{shownTo} / {fmtInt(total)} gậy</span>}
       >
-        <Table<StickRow>
-          className="history-table history-stick-table"
-          size="small"
-          rowKey="id"
-          bordered
+        <StickTable
+          spacious
+          rows={selected !== undefined ? sticks.data?.items : []}
+          total={total} page={page} onPage={setPage} onOpen={(id) => openStick({ id })}
           loading={sticks.loading}
-          dataSource={selected !== undefined ? sticks.data?.items : []}
-          columns={stickColumns}
-          scroll={{ x: 1050 }}
-          pagination={{ current: page, pageSize: PAGE_SIZE, total, onChange: setPage, showSizeChanger: false, hideOnSinglePage: true }}
-          locale={{ emptyText: "Chọn một SKU để xem gậy." }}
+          emptyText={selected === undefined ? "Chọn một SKU để xem chi tiết gậy" : "Không có gậy phù hợp"}
         />
       </Card>
 
-      <StickDrawer source={drawer} onClose={() => setDrawer(null)} />
     </div>
   );
 }

@@ -24,6 +24,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_icon(tauri::include_image!("./icons/128x128.png"))?;
+            }
             let started_at = chrono::Utc::now();
             let app_cfg = AppConfig::load();
             // Saves records to Postgres; creates the database and tables if missing.
@@ -39,6 +42,8 @@ pub fn run() {
             app.manage(db_pool);
 
             let cfg = PlcConfig::default();
+            let diagnostics = plc::diagnostics::DiagnosticsState::new(&cfg);
+            app.manage(diagnostics.clone());
             app.manage(app_info::AppInfo {
                 started_at,
                 plc_addr: cfg.addr.to_string(),
@@ -50,9 +55,11 @@ pub fn run() {
             // Forward connection status changes to the frontend.
             let mut status_rx = plc.subscribe_status();
             let app_handle = app.handle().clone();
+            let status_diagnostics = diagnostics.clone();
             tauri::async_runtime::spawn(async move {
                 loop {
                     let status = status_rx.borrow_and_update().clone();
+                    let _ = app_handle.emit("plc://diagnostics", status_diagnostics.status(status.clone()));
                     let _ = app_handle.emit("plc://status", status);
                     if status_rx.changed().await.is_err() {
                         break;
@@ -66,6 +73,7 @@ pub fn run() {
             let save_app = app.handle().clone();
             let emit = move |ev| {
                 let _ = match ev {
+                    PollEvent::ReadDiagnostics { elapsed_ms, failed } => app_handle.emit("plc://diagnostics", diagnostics.read(elapsed_ms, failed)),
                     PollEvent::Control(c) => app_handle.emit("plc://control", c),
                     PollEvent::Record(r) => app_handle.emit("plc://record", &r),
                     PollEvent::Error(e) => app_handle.emit("plc://poll-error", e),
@@ -99,6 +107,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             plc_status,
+            plc::diagnostics::plc_diagnostics,
+            plc::diagnostics::plc_clear_connection_log,
             plc_read_coils,
             plc_read_discrete_inputs,
             plc_read_holding_registers,
@@ -114,6 +124,8 @@ pub fn run() {
             db::commands::stick_list,
             db::commands::sku_summary,
             db::commands::stick_detail,
+            db::commands::report_summary,
+            db::commands::report_export_batch,
             app_info::app_info,
         ])
         .run(tauri::generate_context!())

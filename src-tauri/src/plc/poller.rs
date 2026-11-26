@@ -7,7 +7,7 @@
 //! The PLC is acknowledged even when saving failed (`save` reports its own errors).
 
 use std::future::Future;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::time::{interval, MissedTickBehavior};
 
@@ -18,6 +18,8 @@ use super::{PlcError, PlcHandle, PlcStatus};
 
 #[derive(Debug, Clone)]
 pub enum PollEvent {
+    /// Timing and outcome of an existing read, with no extra PLC request.
+    ReadDiagnostics { elapsed_ms: f64, failed: bool },
     /// Fresh control area, every successful poll.
     Control(ControlArea),
     /// Record [0], read after a DataReady 0 -> 1 edge.
@@ -79,7 +81,10 @@ pub async fn run_poller<F, Fut>(
         }
         tick.tick().await;
 
-        let ctrl = match read_control_area(&plc).await {
+        let read_started = Instant::now();
+        let result = read_control_area(&plc).await;
+        emit(PollEvent::ReadDiagnostics { elapsed_ms: read_started.elapsed().as_secs_f64() * 1000.0, failed: result.is_err() });
+        let ctrl = match result {
             Ok(c) => c,
             Err(PlcError::ActorStopped) => return,
             Err(e) => {
@@ -103,7 +108,10 @@ pub async fn run_poller<F, Fut>(
         }
 
         if is_rising(prev_ready, now) {
-            match read_record0(&plc).await {
+            let read_started = Instant::now();
+            let result = read_record0(&plc).await;
+            emit(PollEvent::ReadDiagnostics { elapsed_ms: read_started.elapsed().as_secs_f64() * 1000.0, failed: result.is_err() });
+            match result {
                 Ok(r) => {
                     emit(PollEvent::Record(r.clone()));
                     save(r).await;

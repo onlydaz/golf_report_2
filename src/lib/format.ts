@@ -15,7 +15,7 @@ export function fmtTime(v: string | Date | null | undefined): string {
 }
 
 /** Vietnamese number with a fixed number of decimals ("121,4"); "—" for missing values. */
-export function fmtNum(v: number | null | undefined, digits = 1): string {
+export function fmtNum(v: number | null | undefined, digits = 2): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return v.toLocaleString("vi-VN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
@@ -24,7 +24,7 @@ export function fmtNum(v: number | null | undefined, digits = 1): string {
 export const fmtInt = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("vi-VN"));
 
 /** Load in kg from grams as stored by the PLC. */
-export const fmtKg = (g: number | null | undefined) => fmtNum(g == null ? null : g / 1000, 3);
+export const fmtKg = (g: number | null | undefined) => fmtNum(g == null ? null : g / 1000, 2);
 
 /** "95,5%" of `part` in `total`. */
 export const fmtRate = (part: number, total: number) =>

@@ -1,5 +1,5 @@
 //! Read queries over the tables of `migrations/0001_stick_records.sql`, used by the UI.
-//! Every query takes the same [`StickFilter`]; its conditions only touch `stick` (alias `s`).
+//! Every read query takes the same [`StickFilter`] anchored to `stick` (alias `s`).
 
 use std::collections::HashMap;
 
@@ -20,9 +20,11 @@ pub struct StickFilter {
     pub stick_no: Option<i32>,
     /// Overall result: 0 not measured, 1 OK, 2 NG.
     pub result: Option<i16>,
+    pub butt_result: Option<i16>,
+    pub tip_result: Option<i16>,
 }
 
-fn push_filter(qb: &mut QueryBuilder<Postgres>, f: &StickFilter) {
+pub(super) fn push_filter(qb: &mut QueryBuilder<Postgres>, f: &StickFilter) {
     qb.push(" WHERE TRUE");
     if let Some(v) = f.from {
         qb.push(" AND s.received_at >= ").push_bind(v);
@@ -39,10 +41,17 @@ fn push_filter(qb: &mut QueryBuilder<Postgres>, f: &StickFilter) {
     if let Some(v) = f.result {
         qb.push(" AND s.overall_result = ").push_bind(v);
     }
+    for (station, result) in [("BUTT", f.butt_result), ("TIP", f.tip_result)] {
+        if let Some(v) = result {
+            qb.push(" AND EXISTS (SELECT 1 FROM station_result sf WHERE sf.stick_id = s.id AND sf.station = ")
+                .push_bind(station)
+                .push(" AND sf.result = ").push_bind(v).push(")");
+        }
+    }
 }
 
 /// Station rows joined as `b` (BUTT) and `t` (TIP).
-const JOIN_STATIONS: &str = " FROM stick s \
+pub(super) const JOIN_STATIONS: &str = " FROM stick s \
     LEFT JOIN station_result b ON b.stick_id = s.id AND b.station = 'BUTT' \
     LEFT JOIN station_result t ON t.stick_id = s.id AND t.station = 'TIP'";
 

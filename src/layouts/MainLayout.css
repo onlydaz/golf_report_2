@@ -21,3 +21,8 @@
   max-width: 1600px; width: 100%; margin: 0 auto;
 }
 .db-banner { margin-bottom: 16px; }
+/* The menu container is not an action; keyboard focus belongs to its active item. */
+.main-sider .ant-menu:focus { outline: none; }
+.main-sider .ant-menu-item:focus-visible,
+.main-sider .ant-menu-item-active:focus-visible,
+.main-sider .ant-menu:focus-visible .ant-menu-item-active { outline: 2px solid #fff; outline-offset: -4px; }

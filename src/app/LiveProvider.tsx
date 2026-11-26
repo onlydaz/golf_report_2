@@ -6,6 +6,7 @@ import {
   onPollError,
   onRecord,
   plc,
+  getPlcDiagnostics, onPlcDiagnostics, clearPlcConnectionLog, type PlcDiagnostics,
   type ControlArea,
   type PlcError,
   type PlcStatus,
@@ -42,6 +43,9 @@ interface LiveControl {
 }
 
 const LiveContext = createContext<Live | null>(null);
+const DiagnosticsContext = createContext<{
+  diagnostics: PlcDiagnostics | null; diagnosticsError: string; clearLog: () => Promise<void>;
+} | null>(null);
 const ControlContext = createContext<LiveControl>({ control: null, lastPoll: null, pollError: null });
 
 export function LiveProvider({ children }: { children: ReactNode }) {
@@ -50,6 +54,28 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [last, setLast] = useState<LiveRecord | null>(null);
   const [savedTick, setSavedTick] = useState(0);
+  const [diagnostics, setDiagnostics] = useState<PlcDiagnostics | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
+  const receiveDiagnostics = (next: PlcDiagnostics) => {
+    setDiagnostics((previous) => !previous || next.revision >= previous.revision ? next : previous);
+    setDiagnosticsError("");
+  };
+  const clearLog = async () => { receiveDiagnostics(await clearPlcConnectionLog()); };
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    // Subscribe first, then retrieve startup history. Revision prevents an older snapshot overwriting an event.
+    void (async () => {
+      try {
+        const off = await onPlcDiagnostics((d) => { if (!disposed) receiveDiagnostics(d); });
+        if (disposed) { off(); return; }
+        unlisten = off;
+        const snapshot = await getPlcDiagnostics();
+        if (!disposed) receiveDiagnostics(snapshot);
+      } catch (e) { if (!disposed) setDiagnosticsError(String(e)); }
+    })();
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
   const [control, setControl] = useState<LiveControl>({ control: null, lastPoll: null, pollError: null });
 
   useEffect(() => {
@@ -81,7 +107,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   );
   return (
     <LiveContext.Provider value={live}>
-      <ControlContext.Provider value={control}>{children}</ControlContext.Provider>
+      <ControlContext.Provider value={control}>
+        <DiagnosticsContext.Provider value={{ diagnostics, diagnosticsError, clearLog }}>{children}</DiagnosticsContext.Provider>
+      </ControlContext.Provider>
     </LiveContext.Provider>
   );
 }
@@ -93,3 +121,8 @@ export function useLive(): Live {
 }
 
 export const useControl = () => useContext(ControlContext);
+export function usePlcDiagnostics() {
+  const value = useContext(DiagnosticsContext);
+  if (!value) throw new Error("usePlcDiagnostics outside LiveProvider");
+  return value;
+}

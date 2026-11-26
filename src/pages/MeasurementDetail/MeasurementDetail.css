@@ -1,0 +1,19 @@
+.measurement-detail-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.measurement-detail-page .page-heading { margin-bottom: 0; flex-wrap: wrap; }
+.measurement-detail-page .page-heading > .ant-btn { margin-left: auto; }
+.measurement-info, .measurement-station-summary { display: grid; gap: 20px 24px; margin: 0; }
+.measurement-info { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.measurement-station-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 24px; }
+.measurement-detail-page dt { color: var(--c-navy-500); font-size: 14px; }
+.measurement-detail-page dd { margin: 6px 0 0; font-size: 16px; font-weight: 500; color: var(--c-navy-800); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.measurement-detail-page .ant-table-cell { padding: 14px 16px !important; font-size: 14px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.measurement-detail-page .ant-table-thead > tr > th.ant-table-cell { text-align: center; font-weight: 500; border-bottom-color: var(--c-border-soft); }
+.measurement-detail-page .ant-table-thead > tr > th::before { display: none; }
+.measurement-detail-page .ant-table-tbody > tr > td { border-bottom-color: var(--c-border-soft); }
+.measurement-detail-page .ant-tag { margin-inline-end: 0; }
+.measurement-detail-page .attempt-decided > td { background: #edf6ff !important; font-weight: 600; color: var(--c-navy-900); }
+.measurement-detail-page .ant-table-expanded-row > td { padding: 18px 24px !important; }
+.measurement-note { margin: 0; color: var(--c-navy-500); font-size: 13px; }
+@media (max-width: 1000px) {
+  .measurement-info, .measurement-station-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

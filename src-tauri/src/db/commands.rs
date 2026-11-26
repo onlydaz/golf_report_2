@@ -34,3 +34,18 @@ pub async fn sku_summary(db: State<'_, DbPool>, filter: StickFilter) -> Result<V
 pub async fn stick_detail(db: State<'_, DbPool>, id: i64) -> Result<Option<StickDetail>, String> {
     query::stick_detail(&db.get()?, id).await.map_err(msg)
 }
+
+#[tauri::command]
+pub async fn report_summary(
+    db: State<'_, DbPool>, info: State<'_, crate::app_info::AppInfo>,
+    filter: StickFilter, timezone: String,
+) -> Result<super::report::ReportSummary, String> {
+    super::report::summary(&db.get()?, &filter, &timezone, &info.measurement.butt).await.map_err(msg)
+}
+
+#[tauri::command]
+pub async fn report_export_batch(
+    db: State<'_, DbPool>, filter: StickFilter, after_id: i64, max_id: Option<i64>,
+) -> Result<super::report::ExportBatch, String> {
+    super::report::export_batch(&db.get()?, &filter, after_id, max_id).await.map_err(msg)
+}

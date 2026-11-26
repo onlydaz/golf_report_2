@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, Popconfirm, Spin, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Empty, Popconfirm, Spin, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router";
 import { useControl, useLive, type SaveState } from "../../app/LiveProvider";
@@ -8,7 +8,7 @@ import ControlAreaPanel from "../../components/ControlAreaPanel";
 import PageHeader from "../../components/PageHeader";
 import PointTable from "../../components/PointTable";
 import { ResultTag, ResultTiles } from "../../components/Result";
-import StickDrawer, { type StickSource } from "../../components/StickDrawer";
+import { useOpenStick } from "../../lib/useOpenStick";
 import { useQuery } from "../../lib/useQuery";
 import { db, type StickPage, type StickRow, type StickStats } from "../../lib/db";
 import { resetReadCount, type StickRecord } from "../../lib/plc";
@@ -87,7 +87,7 @@ function PlcStateCard() {
             : ["Đang thu dữ liệu", "running"];
   return (
     <Card className="section-card">
-      <div className="kicker">Trạng thái PLC</div>
+      <div className="kicker">Trạng thái máy</div>
       <strong className={`monitor-machine monitor-machine-${tone}`}>{label}</strong>
       <div className="monitor-machine-detail">
         DataReady <Tag>{control?.dataReady ?? "—"}</Tag>
@@ -140,7 +140,7 @@ function CountersCard({ stickNo }: { stickNo?: number }) {
 }
 
 function SaveTag({ save }: { save: SaveState }) {
-  if (save.state === "saved") return <Tag color="green">Đã lưu #{save.id}</Tag>;
+  if (save.state === "saved") return null;
   if (save.state === "error") return <Tag color="red" title={save.message}>Lưu thất bại</Tag>;
   return <Tag color="orange">Đang lưu…</Tag>;
 }
@@ -168,7 +168,7 @@ function CurrentStick({
         )}
       </div>
       <ResultTiles butt={r?.butt.result} tip={r?.tip.result} overall={r?.overallResult} />
-      {current && (
+      {current && current.save.state !== "saved" && (
         <div className="monitor-save">
           Lưu CSDL <SaveTag save={current.save} />
           {current.save.state === "error" && <span className="monitor-save-error">{current.save.message}</span>}
@@ -177,7 +177,7 @@ function CurrentStick({
       <PointTable record={r} loading={loading && !r} />
       {r && (
         <Button className="monitor-open" onClick={onOpen}>
-          Xem 4 lần đo từng điểm
+          Xem các lần đo từng điểm
         </Button>
       )}
     </Card>
@@ -202,14 +202,14 @@ function RecentTable({
   const navigate = useNavigate();
   const columns = useMemo<ColumnsType<StickRow>>(
     () => [
-      { title: "Thời gian", dataIndex: "receivedAt", render: fmtTime, width: 110 },
-      { title: "Số gậy", dataIndex: "stickNo", width: 90 },
-      { title: "SKU", dataIndex: "productCode", render: (v) => v || "—", width: 140 },
-      { title: "BUTT P1 / P2 / P3 / P4 (mm)", render: (_, r) => r.buttBends.map((v) => fmtNum(v)).join(" / ") },
+      { title: "Thời gian", dataIndex: "receivedAt", render: fmtTime, width: 120 },
+      { title: "Số gậy", dataIndex: "stickNo", render: (v) => `#${v}`, width: 90 },
+      { title: "SKU", dataIndex: "productCode", render: (v) => v || "—", width: 150 },
+      { title: "BUTT P1 / P2 / P3 / P4 (mm)", render: (_, r) => r.buttBends.map((v) => fmtNum(v)).join(" / "), width: 280 },
       { title: "TIP (mm)", render: (_, r) => fmtNum(r.tipBends[0]), width: 100 },
-      { title: "BUTT", dataIndex: "buttResult", render: (v) => <ResultTag value={v} />, width: 90 },
-      { title: "TIP", dataIndex: "tipResult", render: (v) => <ResultTag value={v} />, width: 90 },
-      { title: "Overall", dataIndex: "overallResult", render: (v) => <ResultTag value={v} />, width: 90 },
+      { title: "BUTT", dataIndex: "buttResult", render: (v) => <ResultTag value={v} />, width: 100 },
+      { title: "TIP", dataIndex: "tipResult", render: (v) => <ResultTag value={v} />, width: 100 },
+      { title: "Overall", dataIndex: "overallResult", render: (v) => <ResultTag value={v} />, width: 100 },
     ],
     [],
   );
@@ -231,10 +231,10 @@ function RecentTable({
         loading={loading}
         dataSource={data?.items}
         columns={columns}
-        scroll={{ x: 900 }}
+        scroll={{ x: 1040 }}
         pagination={{ current: page, pageSize: RECENT_PAGE_SIZE, total: data?.total ?? 0, onChange: onPage, hideOnSinglePage: true, showSizeChanger: false }}
         onRow={(r) => ({ onClick: () => onOpen(r.id) })}
-        locale={{ emptyText: "Chưa có gậy nào được lưu." }}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có gậy nào được lưu" /> }}
       />
     </Card>
   );
@@ -245,7 +245,7 @@ export default function Monitor() {
   const connected = dbStatus.connected;
   const [recentPage, setRecentPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
-  const [drawer, setDrawer] = useState<StickSource | null>(null);
+  const openStick = useOpenStick();
 
   const stats = useQuery(connected && !!info, () => db.stats({ from: info!.startedAt }), [info, savedTick, refresh]);
   const recent = useQuery(connected, () => db.list({}, recentPage, RECENT_PAGE_SIZE), [recentPage, savedTick, refresh]);
@@ -260,7 +260,7 @@ export default function Monitor() {
       : undefined;
 
   const sku = current?.record.productCode || undefined;
-  const chart = useQuery(connected, () => db.list({ productCode: sku }, 1, CHART_SIZE), [sku, savedTick, refresh]);
+  const chart = useQuery(connected && !!sku, () => db.list({ productCode: sku }, 1, CHART_SIZE), [sku, savedTick, refresh], false);
   const error = stats.error || recent.error || chart.error || newest.error;
 
   return (
@@ -284,14 +284,14 @@ export default function Monitor() {
           loading={recent.loading || newest.loading}
           onOpen={() =>
             current &&
-            setDrawer(
+            openStick(
               current.save.state === "saved"
                 ? { id: current.save.id }
                 : { record: current.record, receivedAt: current.receivedAt },
             )
           }
         />
-        <BendChart rows={chart.data?.items ?? []} settings={info?.measurement} loading={chart.loading} />
+        <BendChart rows={chart.data?.items ?? []} settings={info?.measurement} loading={chart.loading} sku={sku} />
       </section>
 
       <RecentTable
@@ -300,11 +300,10 @@ export default function Monitor() {
         loading={recent.loading}
         onPage={setRecentPage}
         onRefresh={() => setRefresh((n) => n + 1)}
-        onOpen={(id) => setDrawer({ id })}
+        onOpen={(id) => openStick({ id })}
       />
 
       <ControlAreaPanel />
-      <StickDrawer source={drawer} onClose={() => setDrawer(null)} />
     </div>
   );
 }

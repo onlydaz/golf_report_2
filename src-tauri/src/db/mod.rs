@@ -5,6 +5,7 @@
 
 pub mod commands;
 mod query;
+mod report;
 mod store;
 
 use std::sync::{Arc, Mutex, OnceLock};
