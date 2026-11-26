@@ -1,123 +1,189 @@
-# golf-report-v2
+# Golf Report V2 — New Ocean Group
 
-Phần mềm desktop (Tauri 2 + React) theo dõi máy đo độ cong cán gậy golf X212PI. Ứng dụng đọc dữ liệu từ PLC Delta AS200 qua Modbus TCP, lưu từng cây gậy vào PostgreSQL và hiển thị kết quả đo trực tiếp cùng lịch sử.
+## 1. Giới thiệu
 
-## Tính năng
+Ứng dụng desktop của **New Ocean Group** theo dõi máy đo độ cong cán gậy golf X212PI. Phần mềm tự kết nối PLC Delta AS200 qua Modbus TCP, đọc kết quả BUTT/TIP, lưu PostgreSQL và cung cấp giao diện giám sát, tra cứu, báo cáo.
 
-- **Monitor** (`/monitor`): trạng thái kết nối PLC và DB, vùng điều khiển (TotalCount, StickNo, DataReady, …), kết quả cây gậy mới nhất với biểu đồ độ cong theo từng điểm đo của trạm BUTT và TIP.
-- **History** (`/history`): danh sách cây gậy đã lưu, thống kê theo mã sản phẩm (SKU), xem chi tiết từng cây.
-- Tự tạo database và bảng khi khởi động (migration nhúng sẵn trong app).
+## 2. Tính năng chính
 
-## Luồng dữ liệu PLC
+| Trang | Chức năng |
+|---|---|
+| Giám sát (`/monitor`) | SKU, trạng thái máy, thống kê OK/NG, gậy vừa kiểm tra, biểu đồ 30 gậy gần nhất và danh sách gậy đã lưu |
+| Lịch sử đo (`/history`) | Lọc thời gian, SKU, số gậy, Overall; chọn SKU và phân trang chi tiết gậy |
+| Báo cáo (`/reports`) | Lọc Overall/BUTT/TIP, KPI, thống kê ngày/30 phút, NG theo điểm, phân bố độ cong BUTT, trung bình, độ lệch chuẩn mẫu, Cpk tham chiếu và xuất Excel |
+| Kết nối PLC (`/plc`) | Cấu hình chỉ đọc, trạng thái, bộ đếm, nhật ký 100 dòng trong RAM, vùng điều khiển kỹ thuật thu gọn và Reset PC_ReadCount có xác nhận |
 
-Bảng dữ liệu nằm ở D25000..D25499 (chi tiết trong [docs/X212PI-Register-Mapping-PLC-Software.xlsx](docs/X212PI-Register-Mapping-PLC-Software.xlsx), offset trong code ở [registers.rs](src-tauri/src/plc/registers.rs)):
+Trang chi tiết phép đo hiển thị hai trạm và các lượt đo mở rộng, tô nổi lượt quyết định; hỗ trợ bản ghi đã lưu và bản ghi trực tiếp chưa lưu. Quay lại giữ bộ lọc, SKU và phân trang của trang trước.
 
-| Vùng | Địa chỉ | Số thanh ghi |
-|---|---|---|
-| Vùng điều khiển | D25000..D25019 | 20 |
-| Bản ghi [0] | D25020..D25259 | 240 |
-| Bản ghi [1] | D25260..D25499 | 240 |
+Trang Kết nối PLC không điều khiển kết nối. Bộ đếm lỗi/mất kết nối “hôm nay” tính trong phiên ứng dụng hiện tại. Reset chỉ ghi PC_ReadCount về 0, không xóa hồ sơ đo.
 
-Mỗi 500 ms app đọc vùng điều khiển. Khi `DataReady` chuyển 0 → 1:
+## 3. Công nghệ sử dụng
 
-1. Đọc và giải mã bản ghi [0].
-2. Lưu vào PostgreSQL (chờ tối đa 5 s).
-3. Xác nhận với PLC: ghi `PC_ReadCount = PC_ReadCount cũ + 1`, sau đó ghi `PC_ReadDone = 1`.
+- Giao diện: React 19, TypeScript 6, Vite 8, Ant Design 6, React Router 7, Recharts 3.
+- Desktop: Tauri 2; giao tiếp giao diện/Rust bằng command và event.
+- Thu thập: Rust edition 2024, Tokio, `tokio-modbus` 0.17.
+- Lưu trữ: PostgreSQL, SQLx 0.9; migration nhúng trong ứng dụng.
+- Excel: ExcelJS, ba sheet tổng hợp, điểm đo và lượt đo.
 
-PLC vẫn được xác nhận khi lưu lỗi hoặc quá thời gian; lỗi được báo lên giao diện qua event `db://error`.
+Tham chiếu: [package.json](package.json), [Cargo.toml](src-tauri/Cargo.toml).
 
-Địa chỉ PLC mặc định là `192.168.1.49:502`, slave 1. Giá trị này đang cố định trong [plc/config.rs](src-tauri/src/plc/config.rs), chưa đọc từ `config.toml`.
+## 4. Yêu cầu môi trường
 
-## Yêu cầu
+**Máy phát triển/build Ubuntu:** Git, npm, Rust stable mới qua rustup và thư viện hệ thống Tauri. Dùng **Node.js 22 từ 22.12 hoặc Node.js 24** để chạy cả build và kiểm thử. Theo lockfile, Vite yêu cầu `^20.19.0 || >=22.12.0`, Vitest yêu cầu `^22.12.0 || ^24.0.0 || >=26.0.0`; không phải mọi bản Node 20 đều phù hợp.
 
-- Node.js 20+ và npm
-- Rust (stable, edition 2024)
-- Các thư viện hệ thống cho Tauri trên Linux: xem [hướng dẫn của Tauri](https://tauri.app/start/prerequisites/)
-- PostgreSQL. User được cấu hình cần có quyền `CREATE DATABASE` nếu database chưa tồn tại.
-
-## Cấu hình
-
-Sao chép file mẫu rồi sửa thông tin database:
+Cài thư viện build theo [hướng dẫn Tauri 2](https://v2.tauri.app/start/prerequisites/#linux):
 
 ```bash
-cp src-tauri/config.example.toml src-tauri/config.toml
+sudo apt update
+sudo apt install git build-essential pkg-config curl wget file \
+  libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+  libayatana-appindicator3-dev librsvg2-dev
 ```
 
-`config.toml` chứa mật khẩu DB nên đã nằm trong `.gitignore`. App tìm file theo thứ tự sau và dùng file đầu tiên tìm thấy:
+Kiểm tra công cụ trước khi build:
 
-1. Thư mục làm việc hiện tại (khi chạy dev là `src-tauri/`)
-2. Thư mục chứa file thực thi
-3. `$XDG_CONFIG_HOME/golf-report-v2/config.toml` (mặc định `~/.config/golf-report-v2/config.toml`)
-4. `/etc/golf-report-v2/config.toml`
+```bash
+node --version
+npm --version
+rustc --version
+cargo --version
+```
 
-Nếu không tìm thấy file hoặc file sai cú pháp, app dùng giá trị mặc định và in lý do ra stderr.
+**Máy chỉ cài `.deb`:** cần desktop Ubuntu, thư viện chạy do `apt` giải quyết, kết nối đến PLC và PostgreSQL; không cần Git, Node/npm hoặc Rust. PostgreSQL có thể nằm trên máy khác. Build trên Linux cùng kiến trúc CPU với máy đích, ưu tiên cùng phiên bản Ubuntu để tránh lệch thư viện hệ thống. Build trên Windows không tạo `.deb`.
+
+## 5. Tải và cập nhật source code từ GitHub
+
+Lần đầu lấy source:
+
+```bash
+git clone https://github.com/onlydaz/golf_report_2.git
+cd golf_report_2
+npm ci
+```
+
+Nếu máy đã có source, vào thư mục đó; **không clone lại**:
+
+```bash
+git status
+git pull
+npm ci
+```
+
+Nếu có chỉnh sửa riêng, lưu bằng commit hoặc stash trước khi pull; xử lý xung đột nếu có. Không dùng `git reset --hard` để cập nhật thông thường. `npm ci` cài đúng dependency trong `package-lock.json`.
+
+## 6. Cấu hình PostgreSQL, PLC và thông số đo
+
+### PostgreSQL
+
+Nếu dùng PostgreSQL cục bộ trên Ubuntu và chưa cài:
+
+```bash
+sudo apt install postgresql postgresql-client
+sudo systemctl enable --now postgresql
+```
+
+Kiểm tra dịch vụ và khả năng nhận kết nối:
+
+```bash
+systemctl status postgresql --no-pager
+pg_isready -h localhost -p 5432
+```
+
+Nếu DB ở máy khác, thay host/port tương ứng, không cần cài dịch vụ cục bộ. `pg_isready` chưa xác nhận quyền của tài khoản ứng dụng.
+
+Ứng dụng kết nối database quản trị `postgres`, tạo DB đích nếu thiếu rồi chạy migration. Tài khoản cần truy cập `postgres`, quyền `CREATE DATABASE` nếu DB đích chưa tồn tại và quyền tạo/cập nhật bảng, đọc/ghi trong DB đích. Với PostgreSQL cục bộ mới, có thể tạo tài khoản riêng và nhập mật khẩu khi được hỏi:
+
+```bash
+sudo -u postgres createuser --login --createdb --pwprompt golf_report_app
+```
+
+Không tạo lại tài khoản đã tồn tại. Kiểm tra xác thực bằng tài khoản đã chọn:
+
+```bash
+psql -h localhost -p 5432 -U golf_report_app -d postgres -W -c 'SELECT 1;'
+```
+
+### File cấu hình
+
+Khi phát triển, tạo bản sao mẫu nếu chưa có rồi sửa:
+
+```bash
+cp -n src-tauri/config.example.toml src-tauri/config.toml
+nano src-tauri/config.toml
+```
+
+Ví dụ phần DB; thay bằng thông tin thật, không dùng mật khẩu minh họa:
 
 ```toml
 [database]
 host = "localhost"
 port = 5432
-user = "postgres"
-password = "postgres"   # ghi nguyên văn, không cần escape @ : / #
-dbname = "golf_report"  # tự tạo nếu chưa có
+user = "golf_report_app"
+password = "THAY_BANG_MAT_KHAU_THUC_TE"
+dbname = "golf_report"
 max_connections = 5
-
-# Thông số máy hiển thị trên Monitor (PLC không gửi các giá trị này).
-# Chỉ dùng cho giới hạn và nhãn của biểu đồ; OK/NG luôn lấy từ PLC.
-# Khi khai báo một trạm, phải ghi đủ mọi key: key bị bỏ trống sẽ hiện "chưa cấu hình".
-[measurement.butt]
-load_kg = 2.5
-push_dist_mm = 10.0
-bend_min_mm = 50.0
-bend_max_mm = 200.0
-positions_mm = [150.0, 300.0, 450.0, 600.0]
-
-[measurement.tip]
-load_kg = 2.5
-push_dist_mm = 8.0
-bend_min_mm = 50.0
-bend_max_mm = 200.0
-positions_mm = [80.0]
 ```
 
-## Phát triển
+App dùng **file `config.toml` đầu tiên tồn tại** theo thứ tự:
+
+1. Thư mục làm việc hiện tại; khi chạy Tauri dev thường là `src-tauri/`.
+2. Thư mục chứa executable.
+3. `$XDG_CONFIG_HOME/golf-report-v2/config.toml`, hoặc `~/.config/golf-report-v2/config.toml` khi chưa đặt XDG_CONFIG_HOME.
+4. `/etc/golf-report-v2/config.toml`.
+
+Nếu file đầu tiên sai/không đọc được, app dùng mặc định, không thử file kế tiếp. Cấu hình chỉ đọc lúc khởi động. Khi mở bằng biểu tượng, dùng cấu hình người dùng ở bước 8 để tránh phụ thuộc thư mục làm việc.
+
+**Không commit mật khẩu.** `.gitignore` hiện chỉ bỏ qua đích danh `src-tauri/config.toml`, không tự bỏ qua file cùng tên ở vị trí khác. Giới hạn quyền đọc file trên máy cài đặt.
+
+### PLC và thông số đo
+
+- Endpoint mặc định: `192.168.1.49:502`, Unit ID 1, chu kỳ đọc control danh nghĩa 500 ms. Các giá trị nằm trong [plc/config.rs](src-tauri/src/plc/config.rs), **chưa lấy từ TOML**; thay đổi cần sửa và build lại. Trang Kết nối PLC chỉ hiển thị cấu hình đang dùng.
+- `[measurement.butt]` và `[measurement.tip]` trong [file mẫu](src-tauri/config.example.toml) quy định tải đè tham chiếu (kg), khoảng đẩy (mm), giới hạn độ cong (mm) và vị trí điểm đo (mm). Dùng cho nhãn/giới hạn biểu đồ và Cpk tham chiếu; không ghi thông số xuống PLC hoặc tính lại OK/NG.
+- Khi khai báo bảng của một trạm, điền đủ các khóa như mẫu: khóa bỏ trống không tự kế thừa bộ mặc định của trạm đó.
+
+Chi tiết: [config.rs](src-tauri/src/config.rs).
+
+## 7. Chạy ứng dụng trong môi trường phát triển
+
+Sau khi cài dependency và chuẩn bị cấu hình, chạy tại thư mục gốc:
 
 ```bash
-npm install
 npm run tauri dev
 ```
 
-Chạy test:
+Tauri tự chạy Vite ở cổng 1420 và khởi động backend. `npm run dev` chỉ chạy giao diện, không có Actor/Poller/DB Writer. App thật tự kết nối và có thể tạo DB, chạy migration, ghi ACK khi nhận dữ liệu.
+
+**Không chạy đồng thời bản dev và bản đã cài, hoặc nhiều máy/ứng dụng ghi ACK vào cùng PLC.**
+
+Các lệnh kiểm tra khi phát triển:
 
 ```bash
-cd src-tauri && cargo test   # gồm test giả lập PLC bằng Modbus server
+npm run build
+npm test -- --run
+cd src-tauri
+cargo check
+cargo test --lib
 ```
 
-## Đóng gói và cài đặt trên Linux
+Test PLC dùng server giả lập cục bộ. Test DB có đánh dấu bỏ qua và có thao tác tạo/xóa DB kiểm thử; không bật `--ignored` trên môi trường vận hành.
 
-### 1. Build bộ cài
+## 8. Build và cài đặt ứng dụng trên Ubuntu
 
-Thực hiện trên máy **Linux** đã có Node/npm, Rust và thư viện hệ thống Tauri theo mục Yêu cầu. Chạy tại thư mục gốc project:
+**Bước 1 — Dừng ứng dụng:** đóng cửa sổ Golf Report; nếu chạy dev, nhấn `Ctrl+C` tại terminal. Kiểm tra không còn phiên thu thập trước khi mở phiên mới.
+
+**Bước 2 — Chuẩn bị source:** tại thư mục gốc, chạy `git status`, xử lý chỉnh sửa riêng rồi `git pull` và `npm ci` như mục 5. Nếu vừa clone và cài dependency thì chuyển sang bước 3.
+
+**Bước 3 — Xóa bộ cài cũ, build và cài:** chạy lần lượt; nếu lỗi, xử lý trước khi tiếp tục.
 
 ```bash
-npm ci
+rm -f src-tauri/target/release/bundle/deb/*.deb
 npm run tauri -- build --bundles deb
+sudo apt install --reinstall ./src-tauri/target/release/bundle/deb/golf-report-v2_*.deb
 ```
 
-File `.deb` nằm trong `src-tauri/target/release/bundle/deb/`. Build cho cùng kiến trúc CPU với máy cài đặt, ví dụ x86_64. Lệnh build trên Windows tạo bộ cài Windows, không tạo `.deb` Linux.
+Tên package và executable là `golf-report-v2`. Bộ cài mới nằm trong `src-tauri/target/release/bundle/deb/`; `*` khớp phiên bản/kiến trúc. `apt` cài cả dependency chạy. Cấu hình đóng gói: [tauri.conf.json](src-tauri/tauri.conf.json).
 
-### 2. Cài lên Ubuntu/Debian
-
-Chép file `.deb` sang máy đích, mở terminal tại thư mục chứa file rồi chạy:
-
-```bash
-sudo apt install ./golf-report-v2_*.deb
-```
-
-Chỉ để một phiên bản bộ cài phù hợp trong thư mục, hoặc thay phần `*` bằng tên file cụ thể. `apt` cài ứng dụng và các dependency cần thiết. Máy sử dụng không cần cài Node/npm hoặc Rust; cần kết nối được PostgreSQL và PLC.
-
-### 3. Thiết lập cấu hình trước lần mở đầu tiên
-
-Chạy bằng tài khoản người dùng sẽ mở ứng dụng:
+**Bước 4 — Cấu hình lần đầu:** kiểm tra PostgreSQL theo mục 6. Chạy bằng tài khoản sẽ sử dụng ứng dụng:
 
 ```bash
 report_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/golf-report-v2"
@@ -127,50 +193,104 @@ chmod 600 "$report_config_dir/config.toml"
 nano "$report_config_dir/config.toml"
 ```
 
-Sửa thông tin `[database]` và thông số `[measurement]` cho máy thực tế, lưu rồi thoát. `cp -n` giữ cấu hình cũ nếu đã tồn tại. Cấu hình được đọc lại khi khởi động ứng dụng; địa chỉ PLC hiện vẫn lấy từ `src-tauri/src/plc/config.rs` lúc build.
+File mẫu trên do `.deb` đóng gói. Chỉ tạo cấu hình một lần; `cp -n` giữ file có sẵn. Sửa `[database]` và `[measurement]` trước khi mở; không cần tạo bảng thủ công.
 
-### 4. Mở bằng biểu tượng ứng dụng
+**Bước 5 — Mở ứng dụng:** vào menu ứng dụng Ubuntu, tìm **golf-report-v2**, nhấn biểu tượng New Ocean. Nhấp phải chọn **Thêm vào mục yêu thích / Ghim vào Dock**. Nếu chưa thấy biểu tượng, đăng xuất rồi đăng nhập lại.
 
-Sau khi cài `.deb`, mở menu **Ứng dụng / Show Applications**, tìm **golf-report-v2** rồi nhấn biểu tượng New Ocean. Có thể nhấp phải và chọn **Add to Favorites / Pin to Dash** để ghim ứng dụng. Bộ cài tự tạo launcher và cài icon; không cần chạy Vite hoặc `npm run tauri dev`.
-
-Nếu chưa thấy biểu tượng, đăng xuất rồi đăng nhập lại. Có thể mở từ terminal để xem lỗi khởi động:
+Để xem thông báo cấu hình/DB trên terminal, đóng bản đang mở rồi chạy:
 
 ```bash
 golf-report-v2
 ```
 
-Ứng dụng tự kết nối PLC và bắt đầu đọc khi kết nối thành công. Dùng lại lệnh `sudo apt install ./ten-file-moi.deb` khi cập nhật; cấu hình riêng của người dùng vẫn ở thư mục trên.
+Ứng dụng đã cài không cần Vite. Nhật ký PLC xem ở trang Kết nối PLC; app chưa tự ghi log ra file.
 
-**AppImage (tùy chọn):** build bằng `npm run tauri -- build --bundles appimage`, lấy file trong `src-tauri/target/release/bundle/appimage/`, cấp quyền rồi chạy:
+## 9. Cập nhật ứng dụng đã cài đặt trên Ubuntu
+
+Đóng ứng dụng, chạy `git status` và lưu các thay đổi riêng trước. Copy nhóm lệnh này tại thư mục gốc project; nhóm lệnh dừng ngay nếu có lỗi:
 
 ```bash
-chmod +x ./golf-report-v2_*.AppImage
-./golf-report-v2_*.AppImage
+(
+  set -e
+  git pull
+  npm ci
+  rm -f src-tauri/target/release/bundle/deb/*.deb
+  npm run tauri -- build --bundles deb
+  sudo apt install --reinstall ./src-tauri/target/release/bundle/deb/golf-report-v2_*.deb
+)
 ```
 
-AppImage không tự thêm biểu tượng vào menu; dùng `.deb` nếu muốn cài và mở bằng launcher. Với AppImage, cấu hình vẫn đặt trong thư mục người dùng ở bước 3 hoặc `/etc/golf-report-v2/config.toml`; không đặt cạnh file AppImage vì executable chạy trong thư mục mount tạm. Nếu chưa cài `.deb`, lấy file mẫu từ `src-tauri/config.example.toml` của project.
+Không cần clone lại, gỡ bản cũ, tạo lại `config.toml`, xóa database hoặc chạy `cargo clean` mỗi lần build. Xóa `.deb` cũ chỉ xóa file bộ cài trong project, **không gỡ ứng dụng**. Cấu hình người dùng và hồ sơ PostgreSQL vẫn được giữ; migration nhúng được kiểm tra khi mở phiên bản mới.
 
-## Cơ sở dữ liệu
+Nếu build ở máy khác, chép `.deb` mới sang máy đích, chạy `apt install --reinstall` với đường dẫn đó rồi mở lại ứng dụng.
 
-Schema nằm ở [migrations/0001_stick_records.sql](src-tauri/migrations/0001_stick_records.sql). Mỗi bản ghi PLC tạo ra:
+## 10. Gỡ cài đặt ứng dụng
 
-- `stick`: 1 dòng, gồm thông tin chung và 240 word gốc (`raw_words`)
-- `station_result`: 2 dòng (BUTT, TIP)
-- `point_result`: tối đa 8 dòng (P1..P4 cho mỗi trạm)
-- `attempt`: tối đa 32 dòng (A1..A4 cho mỗi điểm, mỗi lần xoay 90°)
+Đóng ứng dụng rồi chạy:
 
-View `point_decided` trả về mỗi điểm đo một dòng, kèm lần đo đã quyết định kết quả. Mã kết quả: `0` = chưa đo, `1` = OK, `2` = NG.
-
-## Cấu trúc thư mục
-
+```bash
+sudo apt remove golf-report-v2
 ```
-src/                  Frontend React (antd, recharts)
-  pages/Monitor       Màn hình theo dõi trực tiếp
-  pages/History       Lịch sử và thống kê
-  app/LiveProvider    Nhận event plc://* và db://* từ backend
-src-tauri/src/
-  plc/                Actor Modbus, vòng poll, giải mã thanh ghi
-  db/                 Ghi bản ghi vào Postgres, các command truy vấn
-  config.rs           Đọc config.toml
-docs/                 Bảng mapping thanh ghi, mockup UI, theme
+
+Lệnh này không xóa database PostgreSQL hoặc cấu hình trong thư mục người dùng. Không cần gỡ trước khi cập nhật.
+
+## 11. Kiến trúc và luồng thu thập dữ liệu PLC
+
+```text
+PLC Delta AS200 ↔ Actor Modbus TCP ↔ Poller → queue RAM → DB Writer → PostgreSQL
+                                      ↓                     ↓
+                              Sự kiện Tauri → LiveProvider → React
+```
+
+- **Actor:** giữ một kết nối Modbus, xử lý yêu cầu tuần tự; tự kết nối lúc mở app và tự reconnect khi lỗi transport/timeout. Modbus exception trả về lỗi nhưng không bắt buộc ngắt socket.
+- **Poller:** khi kết nối, đọc D25000–D25019 (20 WORD) theo chu kỳ danh nghĩa 500 ms. Chỉ khi quan sát `DataReady` **0 → 1** mới đọc record `[0]` tại D25020–D25259 (240 WORD), chia 100 + 100 + 40 WORD. Lần đầu thấy `DataReady=1` không phải cạnh mới.
+- **DB Writer:** nhận record qua queue RAM tối đa 256, lưu một gậy trong transaction. Poller phát bản ghi trực tiếp cho UI trước khi chờ lưu, tối đa 5 giây.
+- **ACK:** ghi `PC_ReadCount` đã đọc + 1 vào D25008–D25009 bằng FC16, rồi `PC_ReadDone=1` vào D25012 bằng FC06. ACK lỗi được thử lại với cùng bộ đếm trong RAM, không lưu lại record ở nhánh retry đó.
+
+**ACK vẫn được gửi khi lưu lỗi, queue đầy hoặc hết thời gian chờ.** Queue không bền vững, không tự phát lại record lưu lỗi, chưa chống trùng theo RecordSeq. Mapping có hai record nhưng Poller chỉ tiêu thụ `[0]`, chưa đọc bù buffer vòng. Kết nối phục hồi không bảo đảm khôi phục đủ dữ liệu đã bỏ lỡ.
+
+OK/NG lấy nguyên từ PLC. “Thời gian đo” của hồ sơ đã lưu là `received_at` do PostgreSQL tạo lúc transaction, không phải timestamp PLC. Các tác vụ nền chạy độc lập với trang đang mở.
+
+Tham chiếu: [lib.rs](src-tauri/src/lib.rs), [Actor](src-tauri/src/plc/actor.rs), [Poller](src-tauri/src/plc/poller.rs), [DB Writer](src-tauri/src/db/mod.rs), [Register Mapping](docs/X212PI-Register-Mapping-PLC-Software.xlsx), [offset thanh ghi](src-tauri/src/plc/registers.rs).
+
+## 12. Cấu trúc database
+
+Schema trong [migration SQL](src-tauri/migrations/0001_stick_records.sql):
+
+| Bảng/view | Dữ liệu |
+|---|---|
+| `stick` | Một dòng/gậy: SKU, số gậy, RecordSeq, thời gian nhận, Overall và raw 240 WORD |
+| `station_result` | Hai dòng/gậy: BUTT/TIP, lực đè theo g, kết quả, số điểm và điểm NG |
+| `point_result` | Tối đa 8 điểm/gậy: vị trí, kết quả, số lượt và lượt quyết định |
+| `attempt` | Tối đa 32 lượt/gậy: khoảng đẩy, độ cong theo mm; góc sinh từ số lượt 0/90/180/270° |
+| `point_decided` | View nối mỗi điểm với lượt quyết định do PLC chỉ định |
+
+Các bảng con có khóa ngoại với xóa dây chuyền; app hiện không có chức năng xóa hồ sơ đo. Mã kết quả: `0` chưa đo, `1` OK, `2` NG. `record_seq` và `stick_no` không có ràng buộc duy nhất.
+
+## 13. Cấu trúc thư mục
+
+```text
+src/
+  app/                  LiveProvider, router Workspace, giữ trạng thái trang trước
+  pages/Monitor/        Giám sát sản xuất
+  pages/History/        Lịch sử theo SKU và chi tiết gậy
+  pages/Reports/        Thống kê, biểu đồ và xuất Excel
+  pages/PlcConnection/  Trạng thái, bộ đếm và nhật ký PLC
+  pages/MeasurementDetail/  Chi tiết phép đo và các lượt đo
+  components/           Biểu đồ, bảng, vùng kỹ thuật, nút Reset và header chung
+  lib/                  Command/event, truy vấn, định dạng, Excel và thống kê
+  layouts/              Sidebar và khung ứng dụng
+  theme/, styles/, assets/  Theme, CSS và logo New Ocean
+public/                 Favicon New Ocean
+src-tauri/
+  src/lib.rs            Khởi tạo Actor, Poller, DB Writer và command/event
+  src/plc/              Modbus, giải mã, ACK và chẩn đoán RAM
+  src/db/               Ghi transaction, query lịch sử/báo cáo và lô xuất Excel
+  src/config.rs         Đọc cấu hình PostgreSQL và thông số đo
+  migrations/           Schema nhúng
+  icons/                Bộ icon New Ocean
+  config.example.toml   Mẫu cấu hình được đóng gói vào .deb
+  tauri.conf.json       Cấu hình chung và đóng gói Linux
+  tauri.windows.conf.json  Cấu hình đóng gói riêng Windows
+docs/                   File Excel Register Mapping
 ```
