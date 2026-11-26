@@ -32,10 +32,10 @@ describe("monitor active SKU", () => {
     vi.mocked(useControl).mockReturnValue({ control: null, lastPoll: null, pollError: null });
   });
 
-  it("shows PLC SKU/customer before the first result without exposing the revision", () => {
+  it("shows PLC SKU before the first result without exposing customer or revision", () => {
     const html = render();
     expect(html).toContain('<strong class="monitor-sku">MH1253R</strong>');
-    expect(html).toContain("Khách hàng: TM");
+    expect(html).not.toContain("Khách hàng:");
     expect(html).not.toContain("Phiên bản:");
     expect(html).toContain("Trực tiếp từ PLC");
     vi.mocked(useLive).mockReturnValue({ ...live(), last: lastRecord() });
@@ -52,13 +52,30 @@ describe("monitor active SKU", () => {
     expect(html).not.toContain("Trực tiếp từ PLC");
   });
 
+  it("passes station config to the latest measurement and chart even when PLC Load is zero", () => {
+    const last = lastRecord();
+    last.record.butt.load = 0;
+    last.record.tip.load = 0;
+    const station = { loadKg: 2.5, pushDistMm: null, bendMinMm: null, bendMaxMm: null, positionsMm: [] };
+    vi.mocked(useLive).mockReturnValue({ ...live(), last, info: {
+      startedAt: "2026-11-26T00:00:00Z", plcAddr: "localhost:502",
+      measurement: { butt: station, tip: { ...station, loadKg: 3.25 } },
+    } });
+    const html = render();
+    expect(html).toContain("Lực đè cài đặt BUTT 2,50 kg / TIP");
+    expect(html).toContain("3,25 kg");
+    expect(html).toContain("<b>2,50</b>");
+    expect(last.record.butt.load).toBe(0);
+    expect(last.record.tip.load).toBe(0);
+  });
+
   it("does not substitute a measured SKU for an unread or empty PLC identity", () => {
     vi.mocked(useLive).mockReturnValue({ ...live(), last: lastRecord() });
     for (const value of [undefined, { ...confirmed, handshake: { ...confirmed.handshake, actSku: "" } }]) {
       vi.mocked(useLiveRecipe).mockReturnValue({ ...active(), confirmed: value, isLive: false, customer: undefined });
       const html = render();
       expect(html).toContain('<strong class="monitor-sku">0</strong>');
-      expect(html).toContain("Khách hàng: 0");
+      expect(html).not.toContain("Khách hàng:");
       expect(html).not.toContain("Chưa xác định SKU đang hiển thị");
     }
   });

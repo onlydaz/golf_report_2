@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 import { appendExportBatch, buildReportExcel, createReportWorkbook } from "./reportExcel";
 import { db, type ExportBatch, type StickRow } from "./db";
+import { CONFIGURED_LOAD_SOURCE } from "./format";
+
+const stationSettings = { loadKg: 2.5, pushDistMm: null, bendMinMm: null, bendMaxMm: null, positionsMm: [] };
+const settings = { butt: stationSettings, tip: { ...stationSettings, loadKg: 3.25 } };
 
 const stick = (id: number): StickRow => ({ id, receivedAt: "2026-11-26T03:00:00Z", recordSeq: id, stickNo: 7,
-  productCode: "=SKU", overallResult: 1, buttResult: 1, buttLoadG: 2500, tipResult: 2, tipLoadG: null,
+  productCode: "=SKU", overallResult: 1, buttResult: 1, buttLoadG: 0, tipResult: 2, tipLoadG: null,
   buttBends: [null, null, null, null], tipBends: [null, null, null, null] });
 const batch = (): ExportBatch => ({ maxId: 2, nextId: null, sticks: [stick(1), stick(2)],
   points: [1, 2].flatMap((id) => ["BUTT", "TIP"].map((station) => ({ stickId: id, productCode: "=SKU", stickNo: 7,
@@ -17,7 +21,9 @@ afterEach(() => vi.restoreAllMocks());
 describe("V2 workbook", () => {
   it("round-trips numeric values, real TIP P4 attempts, nulls, styles and text SKU", async () => {
     const book = createReportWorkbook();
-    appendExportBatch(book, batch());
+    const data = batch();
+    const before = JSON.stringify(data);
+    appendExportBatch(book, data, settings);
     const loaded = new ExcelJS.Workbook();
     await loaded.xlsx.load(await book.xlsx.writeBuffer());
     const [s, p, a] = loaded.worksheets;
@@ -27,7 +33,10 @@ describe("V2 workbook", () => {
     expect(s.getCell("H1").value).toBe("Lực đè cài đặt BUTT (kg)");
     expect(s.getCell("J1").value).toBe("Lực đè cài đặt TIP (kg)");
     expect(s.getCell("H2").numFmt).toBe("0.00");
-    expect(s.getCell("J2").value).toBeNull();
+    expect(s.getCell("J2").value).toBe(3.25);
+    expect(s.getCell("H1").note).toContain(CONFIGURED_LOAD_SOURCE);
+    expect(s.getCell("J1").note).toContain(CONFIGURED_LOAD_SOURCE);
+    expect(JSON.stringify(data)).toBe(before);
     expect(s.getCell("B2").value).toBe("=SKU");
     expect(s.getCell("B2").type).toBe(ExcelJS.ValueType.String);
     expect(p.getCell("F2").value).toBe(0);
@@ -45,7 +54,7 @@ describe("V2 workbook", () => {
   });
 
   it("merges by database ID/station/point despite duplicate SKU and StickNo", () => {
-    const book = createReportWorkbook(); appendExportBatch(book, batch());
+    const book = createReportWorkbook(); appendExportBatch(book, batch(), settings);
     const [s, p, a] = book.worksheets;
     expect(s.model.merges).toEqual([]);
     expect(p.model.merges).toContain("A2:A3");
@@ -58,7 +67,7 @@ describe("V2 workbook", () => {
   });
 
   it("retains a stick with no points without fabricating child rows", () => {
-    const book = createReportWorkbook(); appendExportBatch(book, { ...batch(), points: [], attempts: [] });
+    const book = createReportWorkbook(); appendExportBatch(book, { ...batch(), points: [], attempts: [] }, settings);
     expect(book.worksheets.map((s) => s.rowCount)).toEqual([3, 1, 1]);
   });
 
@@ -67,18 +76,29 @@ describe("V2 workbook", () => {
     const last = { ...batch(), sticks: [stick(3)], points: [], attempts: [], maxId: 3 };
     const spy = vi.spyOn(db, "exportBatch").mockResolvedValueOnce(first).mockResolvedValueOnce(last);
     const filter = { productCode: "=SKU", result: 1 };
-    const result = await buildReportExcel(filter, () => {});
+    const result = await buildReportExcel(filter, () => {}, settings);
     expect(result?.count).toBe(3);
     expect(spy.mock.calls).toEqual([[filter, 0, undefined], [filter, 2, 3]]);
   });
 
   it("returns no workbook when there are no matches", async () => {
     vi.spyOn(db, "exportBatch").mockResolvedValue({ maxId: 0, nextId: null, sticks: [], points: [], attempts: [] });
-    expect(await buildReportExcel({}, () => {})).toBeNull();
+    expect(await buildReportExcel({}, () => {}, settings)).toBeNull();
   });
 
   it("propagates a failed batch rather than exporting a partial workbook", async () => {
     vi.spyOn(db, "exportBatch").mockResolvedValueOnce({ ...batch(), nextId: 2 }).mockRejectedValueOnce(new Error("read failed"));
-    await expect(buildReportExcel({}, () => {})).rejects.toThrow("read failed");
+    await expect(buildReportExcel({}, () => {}, settings)).rejects.toThrow("read failed");
+  });
+
+  it("keeps missing configured loads blank and accepts configured zero without falling back to PLC", () => {
+    const book = createReportWorkbook();
+    const data = batch();
+    data.sticks[0].buttLoadG = 9000;
+    appendExportBatch(book, data, {
+      butt: { ...stationSettings, loadKg: null }, tip: { ...stationSettings, loadKg: 0 },
+    });
+    expect(book.worksheets[0].getCell("H2").value).toBeNull();
+    expect(book.worksheets[0].getCell("J2").value).toBe(0);
   });
 });

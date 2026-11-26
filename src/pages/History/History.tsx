@@ -46,7 +46,7 @@ const skuColumns: ColumnsType<SkuSummary> = [
 ];
 
 export default function History() {
-  const { dbStatus } = useLive();
+  const { dbStatus, info } = useLive();
   const connected = dbStatus.connected;
   const [draft, setDraft] = useState<Draft>({});
   const [filter, setFilter] = useState<StickFilter>({});
@@ -221,6 +221,7 @@ export default function History() {
         extra={<span className="history-note">Hiển thị {shownFrom}–{shownTo} / {fmtInt(total)} gậy</span>}
       >
         <StickTable
+          settings={info?.measurement}
           spacious
           rows={selected !== undefined ? sticks.data?.items : []}
           total={total} page={page} onPage={setPage} onOpen={(id) => openStick({ id })}

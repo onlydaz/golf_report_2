@@ -106,7 +106,7 @@ export interface Station {
   result: number;
   pointCount: number;
   ngPoint: number;
-  /** Configured load in g; divide by 1000 for display in kg. */ load: number;
+  /** Raw PLC Load in g, retained unchanged; displayed setpoint comes from measurement config. */ load: number;
   points: Point[];
 }
 

@@ -11,11 +11,11 @@ const latest = (): StickRecord => {
     attempts: [{ pushDist: 999, bend: 500 }, { pushDist: 3.756, bend: 10 }] };
   return { version: 1, stickNo: 42, productCode: "OTHER-SKU", recordSeq: 42, overallResult: 1,
     status: { raw: 0, valid: true, buttChecked: true, tipChecked: true, overallOk: true }, raw: [],
-    butt: { result: 1, pointCount: 2, ngPoint: 0, load: 2500,
+    butt: { result: 1, pointCount: 2, ngPoint: 0, load: 0,
       points: [structuredClone(point), structuredClone(point)] },
     tip: { result: 1, pointCount: 1, ngPoint: 0, load: 1500, points: [structuredClone(point)] } };
 };
-const reference: StationSettings = { loadKg: 999, pushDistMm: 999, positionsMm: [0, 125.5, 250, 375],
+const reference: StationSettings = { loadKg: 2.5, pushDistMm: 999, positionsMm: [0, 125.5, 250, 375],
   bendMinMm: 50, bendMaxMm: 200 };
 const render = (latestRecord?: StickRecord, rows: StickRow[] = [], station = reference) =>
   renderToStaticMarkup(createElement(BendChart, { rows, loading: false, latestRecord,
@@ -41,7 +41,7 @@ describe("bend scale and displayed measurements", () => {
 });
 
 describe("measurement chart without recipe dependencies", () => {
-  it("uses configured grams and deciding actual kg from the latest measurement", () => {
+  it("uses config kg despite PLC Load zero and deciding actual kg from the latest measurement", () => {
     const r = latest();
     const before = JSON.stringify(r);
     const html = render(r);
@@ -66,15 +66,30 @@ describe("measurement chart without recipe dependencies", () => {
     expect(render(r)).not.toContain("999,00");
   });
 
-  it("uses config reference values without trailing zeroes and never uses its old push distance", () => {
+  it("uses configured limits and actual PLC positions without trailing zeroes or fallback", () => {
     const html = render(latest());
     expect(html).toContain("<b>50–200</b>");
-    expect(html).toContain("<b>0 · 125,5 · 250 · 375</b>");
+    expect(html).toContain("<b>100 · 100</b>");
+    const record = latest();
+    record.butt.points[0].position = 0;
+    expect(render(record)).toContain("<b>0 · 100</b>");
+    expect(html).not.toContain("0 · 125,5 · 250 · 375");
     expect(html).toContain("Giới hạn tham chiếu từ config.toml");
     expect(html).not.toContain("50,00–200,00");
     expect(render(undefined, [], { ...reference, bendMinMm: 201 })).toContain("Chưa cấu hình");
     expect(render(undefined, [], { ...reference, bendMinMm: 0, bendMaxMm: null })).toContain("≥ 0");
     expect(render(undefined, [], { ...reference, bendMinMm: NaN })).toContain("≤ 200");
+  });
+
+  it("uses config without a measurement and never substitutes PLC Load for missing config", () => {
+    expect(render()).toContain("<b>2,50</b>");
+    const record = latest();
+    record.butt.load = 9000;
+    const html = render(record, [], { ...reference, loadKg: null });
+    expect(html).not.toContain("<b>9,00</b>");
+    expect(html).not.toContain("<b>2,50</b>");
+    expect(html).toContain("<b>—</b>");
+    expect(render(record, [], { ...reference, loadKg: 0 })).toContain("<b>0,00</b>");
   });
 
   it("renders stored bends from different SKUs with no live identity or measurement", () => {

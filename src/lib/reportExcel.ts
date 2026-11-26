@@ -1,12 +1,11 @@
 import ExcelJS from "exceljs";
-import type { ExportBatch, StickFilter } from "./db";
+import type { AppInfo, ExportBatch, StickFilter } from "./db";
 import { db } from "./db";
-import { fmtDateTime } from "./format";
+import { CONFIGURED_LOAD_SOURCE, fmtDateTime } from "./format";
 import { resultLabel } from "../components/Result";
 
 const MAX_ROWS = 1_048_576;
 const numeric = (v: number | null) => v != null && Number.isFinite(v) ? v : null;
-const kg = (v: number | null) => v == null ? null : numeric(v / 1000);
 
 function sheet(book: ExcelJS.Workbook, name: string, headers: string[]) {
   const s = book.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1, showGridLines: false }] });
@@ -53,11 +52,11 @@ function mergeGroups<T>(s: ExcelJS.Worksheet, rows: T[], startRow: number, key: 
 }
 
 /** A complete stick belongs to one batch, so merged groups never cross batch boundaries. */
-export function appendExportBatch(book: ExcelJS.Workbook, batch: ExportBatch) {
+export function appendExportBatch(book: ExcelJS.Workbook, batch: ExportBatch, settings: AppInfo["measurement"]) {
   const [summary, points, attempts] = book.worksheets;
   batch.sticks.forEach((r) => addRow(summary, [r.id, r.productCode, r.stickNo, fmtDateTime(r.receivedAt), r.recordSeq,
-    resultLabel(r.overallResult), r.buttResult == null ? null : resultLabel(r.buttResult), kg(r.buttLoadG),
-    r.tipResult == null ? null : resultLabel(r.tipResult), kg(r.tipLoadG)], [8, 10], [6, 7, 9]));
+    resultLabel(r.overallResult), r.buttResult == null ? null : resultLabel(r.buttResult), numeric(settings.butt.loadKg),
+    r.tipResult == null ? null : resultLabel(r.tipResult), numeric(settings.tip.loadKg)], [8, 10], [6, 7, 9]));
   const pointStart = points.rowCount + 1;
   batch.points.forEach((p) => addRow(points, [p.stickId, p.productCode, p.stickNo, p.station, p.pointNo,
     numeric(p.positionMm), resultLabel(p.result), p.attemptCount, p.decideAttempt], [6], [7]));
@@ -80,11 +79,12 @@ export function createReportWorkbook() {
   sheet(book, "Tổng hợp", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Thời gian nhận", "RecordSeq", "Kết quả tổng thể", "Kết quả BUTT", "Lực đè cài đặt BUTT (kg)", "Kết quả TIP", "Lực đè cài đặt TIP (kg)"]);
   sheet(book, "Điểm đo", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Trạm đo", "Điểm đo", "Vị trí đo (mm)", "Kết quả", "Số lượt đo", "Lượt quyết định"]);
   sheet(book, "Lượt đo", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Trạm đo", "Điểm đo", "Lượt đo", "Lực đè thực tế (kg)", "Độ cong (mm)"]);
+  for (const column of ["H1", "J1"]) book.worksheets[0].getCell(column).note = CONFIGURED_LOAD_SOURCE;
   for (const s of book.worksheets.slice(1)) s.getCell("A1").note = "Các dòng được gộp theo mã phép đo, trạm và điểm. Dùng sheet Tổng hợp để lọc/sắp xếp.";
   return book;
 }
 
-export async function buildReportExcel(filter: StickFilter, onProgress: (count: number) => void) {
+export async function buildReportExcel(filter: StickFilter, onProgress: (count: number) => void, settings: AppInfo["measurement"]) {
   const book = createReportWorkbook();
   let afterId = 0;
   let maxId: number | undefined;
@@ -92,7 +92,7 @@ export async function buildReportExcel(filter: StickFilter, onProgress: (count: 
   do {
     const batch = await db.exportBatch(filter, afterId, maxId);
     maxId = batch.maxId;
-    appendExportBatch(book, batch);
+    appendExportBatch(book, batch, settings);
     count += batch.sticks.length;
     onProgress(count);
     if (batch.nextId === null) break;

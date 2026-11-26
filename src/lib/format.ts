@@ -1,5 +1,7 @@
 const pad = (n: number) => String(n).padStart(2, "0");
 
+export const CONFIGURED_LOAD_SOURCE = "Theo measurement trong config.toml hiện tại; không phải Load PLC hoặc cấu hình tại thời điểm đo.";
+
 /** "25/11/2026 10:21:03", local time. */
 export function fmtDateTime(v: string | Date | null | undefined): string {
   if (!v) return "—";

@@ -6,8 +6,9 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import PageHeader from "../../components/PageHeader";
 import { ResultTag } from "../../components/Result";
 import { attemptCount, decidingAttempt, measuredPoints, stationOf, type StationKey } from "../../components/stick";
-import { db, errorText } from "../../lib/db";
-import { fmtDateTime, fmtKg, fmtNum } from "../../lib/format";
+import { db, errorText, type AppInfo } from "../../lib/db";
+import { CONFIGURED_LOAD_SOURCE, fmtDateTime, fmtNum } from "../../lib/format";
+import { useLive } from "../../app/LiveProvider";
 import type { Attempt, Point, StickRecord } from "../../lib/plc";
 import type { MeasurementNavigation } from "../../lib/useOpenStick";
 import "./MeasurementDetail.css";
@@ -30,7 +31,7 @@ function Attempts({ point }: { point: Point }) {
     rowClassName={(a) => a.n === point.decideAttempt ? "attempt-decided" : ""} />;
 }
 
-function StationCard({ record, station }: { record: StickRecord; station: StationKey }) {
+function StationCard({ record, station, settings }: { record: StickRecord; station: StationKey; settings?: AppInfo["measurement"] }) {
   const s = stationOf(record, station);
   const rows = measuredPoints(s).map((p, i) => ({ ...p, n: i + 1 }));
   const columns: ColumnsType<PointRow> = [
@@ -45,7 +46,7 @@ function StationCard({ record, station }: { record: StickRecord; station: Statio
   ];
   return <Card className="section-card measurement-station" title={`Trạm ${station}`}>
     <dl className="measurement-station-summary">
-      <div><dt>Lực đè cài đặt</dt><dd>{fmtKg(s.load)} kg</dd></div>
+      <div title={CONFIGURED_LOAD_SOURCE}><dt>Lực đè cài đặt</dt><dd>{fmtNum(settings?.[station === "BUTT" ? "butt" : "tip"].loadKg)} kg</dd></div>
       <div><dt>Kết quả</dt><dd><ResultTag value={s.result} /></dd></div>
       <div><dt>Số điểm đo</dt><dd>{s.pointCount}</dd></div>
       <div><dt>Điểm NG</dt><dd>{s.ngPoint > 0 ? `P${s.ngPoint}` : "—"}</dd></div>
@@ -58,6 +59,7 @@ function StationCard({ record, station }: { record: StickRecord; station: Statio
 }
 
 export default function MeasurementDetail() {
+  const { info } = useLive();
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -98,8 +100,8 @@ export default function MeasurementDetail() {
           <div><dt>Kết quả tổng thể</dt><dd><ResultTag value={shown.record.overallResult} /></dd></div>
         </dl>
       </Card>
-      <StationCard record={shown.record} station="BUTT" />
-      <StationCard record={shown.record} station="TIP" />
+      <StationCard record={shown.record} station="BUTT" settings={info?.measurement} />
+      <StationCard record={shown.record} station="TIP" settings={info?.measurement} />
       <p className="measurement-note">Nhấn + để xem các lượt đo. Hàng tô xanh là lượt quyết định kết quả của điểm.</p>
     </>}
   </div>;

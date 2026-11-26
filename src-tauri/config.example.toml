@@ -10,8 +10,9 @@ password = "postgres"
 dbname = "golf_report"
 max_connections = 5
 
-# Machine settings shown on the monitor (the PLC does not send them).
-# They drive the bend chart limits and labels only; OK/NG always comes from the PLC.
+# load_kg is the current display/export setpoint on Monitor, History, Detail and Reports.
+# Raw PLC Load is stored unchanged. Actual load (PushDist, kg) and positions come from PLC results.
+# Bend limits are references only; OK/NG always comes from the PLC.
 # A station table written here replaces that station's defaults as a whole:
 # write every key, a key left out is shown as "not configured".
 [measurement.butt]

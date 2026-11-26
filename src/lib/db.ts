@@ -101,7 +101,7 @@ export interface AppInfo {
 
 export interface PointSummary {
   station: string; pointNo: number; positionMin: number | null; positionMax: number | null;
-  /** loadG: configured load in g; pushDistMm: mean actual load in kg (legacy name). */
+  /** loadG: raw PLC Load in g; pushDistMm: mean actual load in kg (legacy name). Display setpoint comes from measurement config. */
   loadG: number | null; pushDistMm: number | null; bendMm: number | null;
   samples: number; points: number; ok: number; ng: number;
 }

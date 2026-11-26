@@ -9,9 +9,9 @@ import PointTable from "../../components/PointTable";
 import { ResultTag, ResultTiles } from "../../components/Result";
 import { useOpenStick } from "../../lib/useOpenStick";
 import { useQuery } from "../../lib/useQuery";
-import { db, type StickPage, type StickRow, type StickStats } from "../../lib/db";
+import { db, type AppInfo, type StickPage, type StickRow, type StickStats } from "../../lib/db";
 import { type StickRecord } from "../../lib/plc";
-import { fmtDateTime, fmtInt, fmtKg, fmtNum, fmtRate, fmtTime } from "../../lib/format";
+import { CONFIGURED_LOAD_SOURCE, fmtDateTime, fmtInt, fmtNum, fmtRate, fmtTime } from "../../lib/format";
 import "./Monitor.css";
 
 const RECENT_PAGE_SIZE = 6;
@@ -103,10 +103,12 @@ function CurrentStick({
   current,
   loading,
   onOpen,
+  settings,
 }: {
   current?: { record: StickRecord; receivedAt: Date | string; save: SaveState };
   loading: boolean;
   onOpen: () => void;
+  settings?: AppInfo["measurement"];
 }) {
   const r = current?.record;
   return (
@@ -114,9 +116,9 @@ function CurrentStick({
       <div className="monitor-current-heading">
         <h2>Gậy vừa kiểm tra · {r ? `#${r.stickNo}` : "Chưa có dữ liệu"}</h2>
         {r && (
-          <span>
-            {fmtTime(current.receivedAt)} · Lực đè cài đặt BUTT {fmtKg(r.butt.load)} kg / TIP{" "}
-            {fmtKg(r.tip.load)} kg
+          <span title={CONFIGURED_LOAD_SOURCE}>
+            {fmtTime(current.receivedAt)} · Lực đè cài đặt BUTT {fmtNum(settings?.butt.loadKg)} kg / TIP{" "}
+            {fmtNum(settings?.tip.loadKg)} kg
           </span>
         )}
       </div>
@@ -127,7 +129,7 @@ function CurrentStick({
           {current.save.state === "error" && <span className="monitor-save-error">{current.save.message}</span>}
         </div>
       )}
-      <PointTable record={r} loading={loading && !r} />
+      <PointTable record={r} loading={loading && !r} settings={settings} />
       {r && (
         <Button className="monitor-open" onClick={onOpen}>
           Xem các lần đo từng điểm
@@ -226,7 +228,6 @@ export default function Monitor() {
         <Card className="section-card">
           <div className="kicker">SKU đang chạy</div>
           <strong className="monitor-sku">{sku ?? "0"}</strong>
-          <div>Khách hàng: {active.customer || "0"}</div>
           {active.isLive && <Tag color="green">Trực tiếp từ PLC</Tag>}
           {!active.isLive && active.confirmed && <small className="monitor-recipe-note">
             Giá trị xác nhận gần nhất: {fmtDateTime(active.confirmed.readAt)}
@@ -238,6 +239,7 @@ export default function Monitor() {
 
       <section className="monitor-mid">
         <CurrentStick
+          settings={info?.measurement}
           current={current}
           loading={recent.loading || newest.loading}
           onOpen={() =>

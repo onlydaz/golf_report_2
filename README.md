@@ -141,13 +141,15 @@ Chỉnh sửa thông tin PostgreSQL phù hợp với máy đang sử dụng.
 
 ### Bước 4: Mở ứng dụng
 
-Tìm **Golf Report V2** trong menu ứng dụng Ubuntu hoặc chạy:
+Tìm **Phần mềm thu thập dữ liệu độ cong gậy golf** trong menu ứng dụng Ubuntu hoặc chạy:
 
 ```bash
 golf-report-v2
 ```
 
 Có thể ghim biểu tượng ứng dụng vào Dock để sử dụng nhanh.
+
+Tên tiếng Việt được đóng gói tự động mỗi lần build DEB qua `bundle.linux.deb.desktopTemplate` (`src-tauri/linux/golf-report-v2.desktop.hbs`); package và executable vẫn là `golf-report-v2`, giữ nguyên icon New Ocean và đường dẫn cấu hình.
 
 ## 7. Cập nhật ứng dụng trên Ubuntu
 
@@ -175,7 +177,9 @@ Lệnh này không xóa dữ liệu PostgreSQL và cấu hình người dùng.
 
 **Công thức đo:** mỗi trạm BUTT/TIP có Enable 0/1, NumPoints 1–10 và luôn hiển thị P1–P10 (index 0–9). Chỉ yêu cầu đủ MaxRot, SettleTime, LoadTol, BendTol và năm thông số của các điểm sử dụng khi bật trạm. Không tự điền mặc định hoặc xóa giá trị khi giảm số điểm/bỏ qua trạm. Vùng truyền vẫn đủ 272 WORD theo `docs/X212PI_Recipe_RegisterMap.xlsx`; trạm tắt và vị trí không dùng mã hóa 0, không làm mất giá trị lưu trong database. **Mapping kết quả hiện chỉ thu thập tối đa 4 điểm mỗi trạm:** được lưu/encode Recipe 5–10 điểm nhưng backend và giao diện chặn nạp các trạm bật vượt 4 điểm cho đến khi kỹ thuật viên xác nhận mapping kết quả tương ứng. PLC điều khiển máy, đo và quyết định OK/NG. Dữ liệu đã lưu chỉ thay đổi khi nhấn Lưu, RecipeRev tăng khi có thay đổi thực tế.
 
-**Đơn vị kết quả đo:** `Load` là lực đè cài đặt, PLC gửi g và giao diện/Excel chia 1.000 để hiển thị kg. `PushDist` là lực đè thực tế; theo xác nhận về PLC hiện tại, dữ liệu đã là kg nên giữ nguyên giá trị khi hiển thị và xuất Excel, với hai chữ số thập phân. Tên kỹ thuật `PushDist`, `pushDistMm` và cột `push_dist_mm` được giữ để tương thích; mô tả mm trong Excel mapping cũ không còn phản ánh ý nghĩa nghiệp vụ này. Không đổi thanh ghi, REAL32, Word Order, lượt quyết định hoặc OK/NG. Không chuyển đổi dữ liệu lịch sử; nếu có dữ liệu từ phiên bản PLC khác, cần kỹ thuật viên xác nhận đơn vị và thời điểm thay đổi trước khi diễn giải chung. PushDist không phải PosForce, PosLinear hay PosPressFixed của Recipe; cấu hình measurement cũ không được dùng để chuyển đổi PushDist.
+**Lực đè cài đặt hiển thị:** Giám sát, Lịch sử, Chi tiết, Báo cáo và Excel dùng `measurement.butt.load_kg` / `measurement.tip.load_kg` trong `config.toml` (hiện là 2,50 kg). Đây là cấu hình hiện tại khi mở ứng dụng, không phải Load PLC hoặc cấu hình tại thời điểm đo lịch sử; giao diện có chú thích và tiêu đề cột Excel có ghi chú nguồn. Khởi động lại ứng dụng sau khi sửa cấu hình. Không có cấu hình thì hiển thị “—” / ô Excel trống, không thay bằng Load PLC. `Load` gốc PLC (đơn vị g), kể cả 0, vẫn được lưu nguyên trong PostgreSQL.
+
+**Đơn vị kết quả đo:** `PushDist` là lực đè thực tế; theo xác nhận về PLC hiện tại, dữ liệu đã là kg nên giữ nguyên giá trị khi hiển thị và xuất Excel, với hai chữ số thập phân. Vị trí điểm đo lấy trực tiếp từ kết quả PLC, kể cả TIP = 0; không thay bằng vị trí Recipe, cấu hình hoặc giá trị mặc định. Tên kỹ thuật `PushDist`, `pushDistMm` và cột `push_dist_mm` được giữ để tương thích; mô tả mm trong Excel mapping cũ không còn phản ánh ý nghĩa nghiệp vụ này. Không đổi thanh ghi, REAL32, Word Order, lượt quyết định hoặc OK/NG. Không chuyển đổi dữ liệu lịch sử; nếu có dữ liệu từ phiên bản PLC khác, cần kỹ thuật viên xác nhận đơn vị và thời điểm thay đổi trước khi diễn giải chung. PushDist không phải PosForce, PosLinear hay PosPressFixed của Recipe; cấu hình measurement cũ không được dùng để chuyển đổi PushDist.
 
 - Chỉ chạy một phiên ứng dụng kết nối và ghi ACK tới PLC tại một thời điểm.
 - Chỉ sử dụng thông số Recipe đã được kỹ thuật viên xác nhận trên máy thật.

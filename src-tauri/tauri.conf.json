@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Phần mềm thu thập dữ liệu độ cong gậy golf",
+  "productName": "golf-report-v2",
   "version": "0.1.0",
   "identifier": "com.golfreport.app",
   "build": {
@@ -38,6 +38,7 @@
     "shortDescription": "Golf shaft PLC monitor and report",
     "linux": {
       "deb": {
+        "desktopTemplate": "linux/golf-report-v2.desktop.hbs",
         "files": {
           "/usr/share/golf-report-v2/config.example.toml": "config.example.toml"
         }
