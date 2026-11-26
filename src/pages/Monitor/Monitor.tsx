@@ -2,17 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, Empty, Spin, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router";
-import { useControl, useLive, useLiveRecipe, type SaveState } from "../../app/LiveProvider";
+import { useControl, useLive, useLiveRecipe, useProduction, type SaveState } from "../../app/LiveProvider";
 import BendChart from "../../components/BendChart";
 import PageHeader from "../../components/PageHeader";
 import PointTable from "../../components/PointTable";
 import { ResultTag, ResultTiles } from "../../components/Result";
 import { useOpenStick } from "../../lib/useOpenStick";
 import { useQuery } from "../../lib/useQuery";
-import { db, type AppInfo, type StickPage, type StickRow, type StickStats } from "../../lib/db";
+import { db, type StickPage, type StickRow, type StickStats } from "../../lib/db";
 import { type StickRecord } from "../../lib/plc";
-import { CONFIGURED_LOAD_SOURCE, fmtDateTime, fmtInt, fmtNum, fmtRate, fmtTime } from "../../lib/format";
+import { PLC_LOAD_SOURCE, fmtInt, fmtKg, fmtNum, fmtRate, fmtTime } from "../../lib/format";
 import "./Monitor.css";
+import { skuMismatch } from "../../lib/production";
 
 const RECENT_PAGE_SIZE = 6;
 const CHART_SIZE = 30;
@@ -103,12 +104,10 @@ function CurrentStick({
   current,
   loading,
   onOpen,
-  settings,
 }: {
   current?: { record: StickRecord; receivedAt: Date | string; save: SaveState };
   loading: boolean;
   onOpen: () => void;
-  settings?: AppInfo["measurement"];
 }) {
   const r = current?.record;
   return (
@@ -116,9 +115,9 @@ function CurrentStick({
       <div className="monitor-current-heading">
         <h2>Gậy vừa kiểm tra · {r ? `#${r.stickNo}` : "Chưa có dữ liệu"}</h2>
         {r && (
-          <span title={CONFIGURED_LOAD_SOURCE}>
-            {fmtTime(current.receivedAt)} · Lực đè cài đặt BUTT {fmtNum(settings?.butt.loadKg)} kg / TIP{" "}
-            {fmtNum(settings?.tip.loadKg)} kg
+          <span title={PLC_LOAD_SOURCE}>
+            {fmtTime(current.receivedAt)} · Lực đè cài đặt BUTT {fmtKg(r.butt.load)} kg / TIP{" "}
+            {fmtKg(r.tip.load)} kg
           </span>
         )}
       </div>
@@ -129,7 +128,7 @@ function CurrentStick({
           {current.save.state === "error" && <span className="monitor-save-error">{current.save.message}</span>}
         </div>
       )}
-      <PointTable record={r} loading={loading && !r} settings={settings} />
+      <PointTable record={r} loading={loading && !r} />
       {r && (
         <Button className="monitor-open" onClick={onOpen}>
           Xem các lần đo từng điểm
@@ -198,6 +197,7 @@ function RecentTable({
 export default function Monitor() {
   const { dbStatus, info, last, savedTick } = useLive();
   const active = useLiveRecipe();
+  const production = useProduction();
   const connected = dbStatus.connected;
   const [recentPage, setRecentPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
@@ -213,25 +213,27 @@ export default function Monitor() {
   const current = last
     ? last
     : newest.data
-      ? { record: newest.data.record, receivedAt: newest.data.receivedAt, save: { state: "saved" as const, id: newest.data.id } }
+      ? { record: newest.data.record, plcProductCode: newest.data.plcProductCode, receivedAt: newest.data.receivedAt, save: { state: "saved" as const, id: newest.data.id } }
       : undefined;
 
-  const sku = active.confirmed?.handshake.actSku || undefined;
+  const selection = production.snapshot?.selection;
+  const sku = selection?.sku;
+  const mismatch = skuMismatch(current?.record.productCode, current?.plcProductCode);
+  const appliedMismatch = active.isLive ? skuMismatch(sku ?? "", active.confirmed?.handshake.actSku) : undefined;
   const error = stats.error || recent.error || chart.error || newest.error;
 
   return (
     <div className="monitor-page">
       <PageHeader title="1 · Giám sát" />
       {error && <Alert type="error" showIcon title={error} />}
+      {production.snapshot?.error && <Alert type="error" showIcon title={production.snapshot.error} />}
+      {!selection && <Alert type="warning" showIcon title="Chưa chọn SKU sản xuất. Kết quả mới sẽ được lưu với SKU trống cho đến khi chọn khách hàng và SKU tại Công thức đo." />}
+      {(mismatch || appliedMismatch) && <Alert type="warning" showIcon title={mismatch || appliedMismatch} />}
 
       <section className="monitor-top" aria-label="Tổng quan">
         <Card className="section-card">
           <div className="kicker">SKU đang chạy</div>
           <strong className="monitor-sku">{sku ?? "0"}</strong>
-          {active.isLive && <Tag color="green">Trực tiếp từ PLC</Tag>}
-          {!active.isLive && active.confirmed && <small className="monitor-recipe-note">
-            Giá trị xác nhận gần nhất: {fmtDateTime(active.confirmed.readAt)}
-          </small>}
         </Card>
         <PlcStateCard />
         <SummaryCards stats={stats.data} loading={stats.loading} startedAt={info?.startedAt} />
@@ -239,7 +241,6 @@ export default function Monitor() {
 
       <section className="monitor-mid">
         <CurrentStick
-          settings={info?.measurement}
           current={current}
           loading={recent.loading || newest.loading}
           onOpen={() =>
@@ -247,7 +248,7 @@ export default function Monitor() {
             openStick(
               current.save.state === "saved"
                 ? { id: current.save.id }
-                : { record: current.record, receivedAt: current.receivedAt },
+                : { record: current.record, receivedAt: current.receivedAt, plcProductCode: current.plcProductCode },
             )
           }
         />

@@ -18,7 +18,8 @@ pub async fn recipe_get(db: State<'_, DbPool>, sku: String) -> Result<Recipe, St
 }
 
 #[tauri::command]
-pub async fn recipe_save(db: State<'_, DbPool>, recipe: SaveRecipe) -> Result<Recipe, String> {
+pub async fn recipe_save(db: State<'_, DbPool>, lifecycle: State<'_, crate::shutdown::Shutdown>, recipe: SaveRecipe) -> Result<Recipe, String> {
+    let _operation = lifecycle.operation()?;
     store::save(&db.get()?, recipe).await
 }
 
@@ -29,7 +30,9 @@ pub async fn recipe_apply(
     transfer: State<'_, RecipeTransfer>,
     sku: String,
     recipe_rev: i32,
+    lifecycle: State<'_, crate::shutdown::Shutdown>,
 ) -> Result<TransferReport, TransferError> {
+    let _operation = lifecycle.operation().map_err(TransferError::failed)?;
     let pool = db.get().map_err(TransferError::failed)?;
     transfer
         .apply(&plc, recipe_rev, store::get(&pool, &sku))
@@ -48,6 +51,8 @@ pub async fn recipe_plc_status(
 pub async fn recipe_reconcile(
     plc: State<'_, PlcHandle>,
     transfer: State<'_, RecipeTransfer>,
+    lifecycle: State<'_, crate::shutdown::Shutdown>,
 ) -> Result<TransferReport, TransferError> {
+    let _operation = lifecycle.operation().map_err(TransferError::failed)?;
     transfer.reconcile(&plc).await
 }

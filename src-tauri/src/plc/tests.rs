@@ -18,6 +18,70 @@ const REG_COUNT: usize = 25500;
 /// Reading this address makes the fake PLC stall, to keep a request in flight.
 const SLOW_ADDR: u16 = 100;
 
+#[tokio::test]
+async fn shutdown_pause_waits_for_save_and_ack_and_resumes_without_duplicate_record() {
+    use tokio::sync::{mpsc, watch, Notify};
+    use super::registers::control;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = start_server(listener).await;
+    let plc = spawn_plc_actor(test_config(addr));
+    wait_for(&plc, |s| *s == PlcStatus::Connected).await;
+    let (pause, pause_rx) = watch::channel(false);
+    let (paused, mut paused_rx) = watch::channel(false);
+    let (events, mut rx) = mpsc::unbounded_channel();
+    let (saves, mut saved) = mpsc::unbounded_channel();
+    let release = Arc::new(Notify::new());
+    let save_release = release.clone();
+    let poller = tokio::spawn(run_poller_with_shutdown(plc.clone(), Duration::from_millis(10),
+        move |e| { let _ = events.send(e); },
+        move |r| {
+            let saves = saves.clone();
+            let release = save_release.clone();
+            async move { saves.send(r).unwrap(); release.notified().await; }
+        }, pause_rx, paused));
+    timeout(Duration::from_secs(2), async {
+        while !matches!(rx.recv().await, Some(PollEvent::Control(c)) if c.data_ready == 0) {}
+    }).await.unwrap();
+    plc.write_single_register(control::START + control::DATA_READY, 1).await.unwrap();
+    timeout(Duration::from_secs(2), saved.recv()).await.unwrap().unwrap();
+    pause.send_replace(true);
+    assert!(timeout(Duration::from_millis(80), paused_rx.wait_for(|v| *v)).await.is_err());
+    release.notify_one();
+    timeout(Duration::from_secs(2), paused_rx.wait_for(|v| *v)).await.unwrap().unwrap();
+    let c = super::control::read_control_area(&plc).await.unwrap();
+    assert_eq!((c.pc_read_count, c.pc_read_done), (1, 1));
+    pause.send_replace(false);
+    timeout(Duration::from_secs(2), paused_rx.wait_for(|v| !v)).await.unwrap().unwrap();
+    assert!(timeout(Duration::from_millis(80), saved.recv()).await.is_err());
+    plc.write_single_register(control::START + control::DATA_READY, 0).await.unwrap();
+    timeout(Duration::from_secs(2), async {
+        while !matches!(rx.recv().await, Some(PollEvent::Control(c)) if c.data_ready == 0 && c.pc_read_count == 1) {}
+    }).await.unwrap();
+    plc.write_single_register(control::START + control::DATA_READY, 1).await.unwrap();
+    timeout(Duration::from_secs(2), saved.recv()).await.unwrap().unwrap();
+    release.notify_one();
+    pause.send_replace(true);
+    timeout(Duration::from_secs(2), paused_rx.wait_for(|v| *v)).await.unwrap().unwrap();
+    assert_eq!(super::control::read_control_area(&plc).await.unwrap().pc_read_count, 2);
+    poller.abort(); server.abort();
+}
+
+#[tokio::test]
+async fn shutdown_pause_also_works_when_plc_is_offline_without_pending_ack() {
+    use tokio::sync::watch;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let plc = spawn_plc_actor(test_config(addr));
+    let (pause, pause_rx) = watch::channel(false);
+    let (paused, mut paused_rx) = watch::channel(false);
+    let poller = tokio::spawn(run_poller_with_shutdown(plc, Duration::from_millis(10), |_| {}, |_| async {}, pause_rx, paused));
+    pause.send_replace(true);
+    timeout(Duration::from_secs(2), paused_rx.wait_for(|v| *v)).await.unwrap().unwrap();
+    poller.abort();
+}
+
 #[derive(Clone)]
 struct FakePlc {
     regs: Arc<Mutex<Vec<u16>>>,

@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/vi";
 import { createHashRouter, RouterProvider } from "react-router";
 import { LiveProvider } from "./app/LiveProvider";
+import ExitConfirmation from "./app/ExitConfirmation";
 import MainLayout from "./layouts/MainLayout";
 import Workspace from "./app/Workspace";
 import { antdTheme } from "./theme/tokens";
@@ -20,6 +21,7 @@ export default function App() {
   return (
     <ConfigProvider locale={viVN} theme={antdTheme}>
       <LiveProvider>
+        <ExitConfirmation />
         {/* Hash routes: no server-side fallback needed under Tauri's asset protocol. */}
         <RouterProvider router={router} />
       </LiveProvider>

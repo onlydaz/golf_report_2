@@ -10,7 +10,6 @@
 }
 .monitor-top > .ant-card > .ant-card-body { padding: 16px 14px; height: 100%; }
 .monitor-sku { display: block; font-size: 20px; color: var(--c-navy-800); overflow-wrap: anywhere; }
-.monitor-recipe-note { display: block; color: var(--c-navy-500); }
 .monitor-count > .ant-card-body > strong {
   display: block; font-family: var(--font-display); font-size: clamp(30px, 2.7vw, 40px); line-height: 1.1;
   font-variant-numeric: tabular-nums; color: var(--c-navy-800);

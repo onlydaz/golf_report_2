@@ -106,7 +106,7 @@ export interface Station {
   result: number;
   pointCount: number;
   ngPoint: number;
-  /** Raw PLC Load in g, retained unchanged; displayed setpoint comes from measurement config. */ load: number;
+  /** PLC setpoint Load in g, retained unchanged; divide by 1000 to display kg. */ load: number;
   points: Point[];
 }
 
@@ -125,6 +125,6 @@ export interface StickRecord {
 }
 
 /** Record [0], emitted when DataReady goes 0 -> 1. */
-export function onRecord(cb: (r: StickRecord) => void): Promise<UnlistenFn> {
-  return listen<StickRecord>("plc://record", (e) => cb(e.payload));
+export function onRecord(cb: (r: { record: StickRecord; productCode: string }) => void): Promise<UnlistenFn> {
+  return listen<{ record: StickRecord; productCode: string }>("plc://record", (e) => cb(e.payload));
 }

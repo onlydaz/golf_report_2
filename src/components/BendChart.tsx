@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Card, Empty, Select, Spin, Tooltip as InfoTooltip } from "antd";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { StationSettings, StickRow } from "../lib/db";
-import { CONFIGURED_LOAD_SOURCE, fmtDateTime, fmtNum } from "../lib/format";
+import { PLC_LOAD_SOURCE, fmtDateTime, fmtKg, fmtNum } from "../lib/format";
 import type { StickRecord } from "../lib/plc";
 import { colors, pointColors } from "../theme/tokens";
 import { decidingAttempt, measuredPoints, stationOf, type StationKey } from "./stick";
@@ -102,8 +102,8 @@ export default function BendChart({
       }
     >
       <div className="bend-settings">
-        <span aria-label="Lực đè cài đặt (kg)" title={CONFIGURED_LOAD_SOURCE}><span className="bend-setting-title">Lực đè cài đặt</span>
-          <span className="bend-setting-unit">(kg)</span><b>{fmtNum(reference?.loadKg)}</b></span>
+        <span aria-label="Lực đè cài đặt (kg)" title={PLC_LOAD_SOURCE}><span className="bend-setting-title">Lực đè cài đặt</span>
+          <span className="bend-setting-unit">(kg)</span><b>{fmtKg(s?.load)}</b></span>
         <span aria-label="Lực đè thực tế (kg)"><span className="bend-setting-title">Lực đè thực tế</span>
           <span className="bend-setting-unit">(kg)</span><InfoTooltip title={!uniformLoad && loads.length
           ? loads.map(p => <div key={p.point}>P{p.point}: {fmtNum(p.value)} kg</div>) : undefined}>

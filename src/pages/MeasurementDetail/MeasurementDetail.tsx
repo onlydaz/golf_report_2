@@ -6,16 +6,16 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import PageHeader from "../../components/PageHeader";
 import { ResultTag } from "../../components/Result";
 import { attemptCount, decidingAttempt, measuredPoints, stationOf, type StationKey } from "../../components/stick";
-import { db, errorText, type AppInfo } from "../../lib/db";
-import { CONFIGURED_LOAD_SOURCE, fmtDateTime, fmtNum } from "../../lib/format";
-import { useLive } from "../../app/LiveProvider";
+import { db, errorText } from "../../lib/db";
+import { PLC_LOAD_SOURCE, fmtDateTime, fmtKg, fmtNum } from "../../lib/format";
 import type { Attempt, Point, StickRecord } from "../../lib/plc";
 import type { MeasurementNavigation } from "../../lib/useOpenStick";
 import "./MeasurementDetail.css";
+import { skuMismatch } from "../../lib/production";
 
 type PointRow = Point & { n: number };
 type AttemptRow = Attempt & { n: number };
-type Detail = { record: StickRecord; receivedAt: Date | string };
+type Detail = { record: StickRecord; receivedAt: Date | string; plcProductCode?: string };
 
 function Attempts({ point }: { point: Point }) {
   const rows = point.attempts.slice(0, attemptCount(point)).map((a, i) => ({ ...a, n: i + 1 }));
@@ -31,7 +31,7 @@ function Attempts({ point }: { point: Point }) {
     rowClassName={(a) => a.n === point.decideAttempt ? "attempt-decided" : ""} />;
 }
 
-function StationCard({ record, station, settings }: { record: StickRecord; station: StationKey; settings?: AppInfo["measurement"] }) {
+function StationCard({ record, station }: { record: StickRecord; station: StationKey }) {
   const s = stationOf(record, station);
   const rows = measuredPoints(s).map((p, i) => ({ ...p, n: i + 1 }));
   const columns: ColumnsType<PointRow> = [
@@ -46,7 +46,7 @@ function StationCard({ record, station, settings }: { record: StickRecord; stati
   ];
   return <Card className="section-card measurement-station" title={`Trạm ${station}`}>
     <dl className="measurement-station-summary">
-      <div title={CONFIGURED_LOAD_SOURCE}><dt>Lực đè cài đặt</dt><dd>{fmtNum(settings?.[station === "BUTT" ? "butt" : "tip"].loadKg)} kg</dd></div>
+      <div title={PLC_LOAD_SOURCE}><dt>Lực đè cài đặt</dt><dd>{fmtKg(s.load)} kg</dd></div>
       <div><dt>Kết quả</dt><dd><ResultTag value={s.result} /></dd></div>
       <div><dt>Số điểm đo</dt><dd>{s.pointCount}</dd></div>
       <div><dt>Điểm NG</dt><dd>{s.ngPoint > 0 ? `P${s.ngPoint}` : "—"}</dd></div>
@@ -59,7 +59,6 @@ function StationCard({ record, station, settings }: { record: StickRecord; stati
 }
 
 export default function MeasurementDetail() {
-  const { info } = useLive();
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -90,18 +89,21 @@ export default function MeasurementDetail() {
     <PageHeader title="Chi tiết phép đo" extra={<Button icon={<ArrowLeftOutlined />}
       onClick={() => navigation?.background ? navigate(-1) : navigate(id === "live" ? "/monitor" : "/history", { replace: true })}>Quay lại</Button>} />
     {shownError ? <Alert type="error" showIcon title={shownError} /> : !shown ? <Spin /> : <>
+      {skuMismatch(shown.record.productCode, shown.plcProductCode) &&
+        <Alert type="warning" showIcon title={skuMismatch(shown.record.productCode, shown.plcProductCode)} />}
       <Card className="section-card" title="Thông tin chung">
         <dl className="measurement-info">
           <div><dt>Mã phép đo</dt><dd>{id === "live" ? "Bản ghi live · Chưa có mã lưu" : `#${id}`}</dd></div>
           <div><dt>SKU</dt><dd>{shown.record.productCode || "—"}</dd></div>
+          <div><dt>SKU gốc PLC</dt><dd>{shown.plcProductCode || "—"}</dd></div>
           <div><dt>Số gậy</dt><dd>#{shown.record.stickNo}</dd></div>
           <div><dt>Thời gian nhận</dt><dd>{fmtDateTime(shown.receivedAt)}</dd></div>
           <div><dt>RecordSeq</dt><dd>{shown.record.recordSeq}</dd></div>
           <div><dt>Kết quả tổng thể</dt><dd><ResultTag value={shown.record.overallResult} /></dd></div>
         </dl>
       </Card>
-      <StationCard record={shown.record} station="BUTT" settings={info?.measurement} />
-      <StationCard record={shown.record} station="TIP" settings={info?.measurement} />
+      <StationCard record={shown.record} station="BUTT" />
+      <StationCard record={shown.record} station="TIP" />
       <p className="measurement-note">Nhấn + để xem các lượt đo. Hàng tô xanh là lượt quyết định kết quả của điểm.</p>
     </>}
   </div>;

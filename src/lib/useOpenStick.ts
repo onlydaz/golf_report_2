@@ -1,7 +1,7 @@
 import { useLocation, useNavigate, type Location } from "react-router";
 import type { StickRecord } from "./plc";
 
-export type StickSource = { id: number } | { record: StickRecord; receivedAt: Date | string };
+export type StickSource = { id: number } | { record: StickRecord; receivedAt: Date | string; plcProductCode?: string };
 export interface MeasurementNavigation {
   background?: Location;
   source?: StickSource;

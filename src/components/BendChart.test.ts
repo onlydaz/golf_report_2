@@ -41,13 +41,14 @@ describe("bend scale and displayed measurements", () => {
 });
 
 describe("measurement chart without recipe dependencies", () => {
-  it("uses config kg despite PLC Load zero and deciding actual kg from the latest measurement", () => {
+  it("shows PLC Load zero without a config fallback and keeps deciding actual kg", () => {
     const r = latest();
     const before = JSON.stringify(r);
     const html = render(r);
     expect(html).toContain("Lực đè cài đặt (kg)");
     expect(html).toContain("Lực đè thực tế (kg)");
-    expect(html).toContain("<b>2,50</b>");
+    expect(html).toContain("<b>0,00</b>");
+    expect(html).not.toContain("<b>2,50</b>");
     expect(html).toContain("<b>3,76</b>");
     expect(html).not.toContain("999,00");
     expect(html).not.toContain("Dung sai độ cong");
@@ -81,15 +82,17 @@ describe("measurement chart without recipe dependencies", () => {
     expect(render(undefined, [], { ...reference, bendMinMm: NaN })).toContain("≤ 200");
   });
 
-  it("uses config without a measurement and never substitutes PLC Load for missing config", () => {
-    expect(render()).toContain("<b>2,50</b>");
+  it("uses PLC grams regardless of configured load and shows unknown without a measurement", () => {
+    expect(render()).not.toContain("<b>2,50</b>");
+    expect(render()).toContain("<b>—</b>");
     const record = latest();
     record.butt.load = 9000;
     const html = render(record, [], { ...reference, loadKg: null });
-    expect(html).not.toContain("<b>9,00</b>");
+    expect(html).toContain("<b>9,00</b>");
     expect(html).not.toContain("<b>2,50</b>");
-    expect(html).toContain("<b>—</b>");
-    expect(render(record, [], { ...reference, loadKg: 0 })).toContain("<b>0,00</b>");
+    expect(render(record, [], { ...reference, loadKg: 0 })).toContain("<b>9,00</b>");
+    record.butt.load = 2500;
+    expect(render(record)).toContain("<b>2,50</b>");
   });
 
   it("renders stored bends from different SKUs with no live identity or measurement", () => {

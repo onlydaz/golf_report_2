@@ -5,7 +5,13 @@ use sqlx::{PgPool, Postgres, Transaction};
 use crate::plc::record::{Station, StickRecord};
 
 /// Save `r` in one transaction. Returns the new `stick.id`.
+#[cfg(test)]
 pub async fn save_record(pool: &PgPool, r: &StickRecord) -> Result<i64, sqlx::Error> {
+    save_production_record(pool, r, &r.product_code).await
+}
+
+/// Selected SKU was captured on receipt; raw PLC words and measurements remain untouched.
+pub async fn save_production_record(pool: &PgPool, r: &StickRecord, product_code: &str) -> Result<i64, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let raw: Vec<u8> = r.raw.iter().flat_map(|w| w.to_le_bytes()).collect();
@@ -16,7 +22,7 @@ pub async fn save_record(pool: &PgPool, r: &StickRecord) -> Result<i64, sqlx::Er
     )
     .bind(r.record_seq)
     .bind(r.stick_no)
-    .bind(&r.product_code)
+    .bind(product_code)
     .bind(r.version)
     .bind(i32::from(r.status.raw))
     .bind(r.overall_result)
@@ -142,6 +148,16 @@ mod tests {
             count("SELECT octet_length(raw_words)::bigint FROM stick WHERE id = $1").await,
             480
         );
+        let selected_id = save_production_record(&pool, &r, "MH1253R").await.unwrap();
+        let later_id = save_production_record(&pool, &r, "MH1287S").await.unwrap();
+        let selected = crate::db::query::stick_detail(&pool, selected_id).await.unwrap().unwrap();
+        let later = crate::db::query::stick_detail(&pool, later_id).await.unwrap().unwrap();
+        assert_eq!(selected.record.product_code, "MH1253R");
+        assert_eq!(later.record.product_code, "MH1287S");
+        assert_eq!(selected.plc_product_code, r.product_code);
+        assert_eq!(selected.record.raw, r.raw);
+        assert_eq!(later.record.raw, r.raw);
+        assert_eq!(crate::db::query::stick_detail(&pool, id).await.unwrap().unwrap().record.product_code, r.product_code);
         pool.close().await;
 
         // Second startup on an existing database is a no-op.

@@ -1,8 +1,7 @@
 import { Empty, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { StickRecord } from "../lib/plc";
-import { CONFIGURED_LOAD_SOURCE, fmtNum } from "../lib/format";
-import type { AppInfo } from "../lib/db";
+import { PLC_LOAD_SOURCE, fmtKg, fmtNum } from "../lib/format";
 import { ResultTag } from "./Result";
 import { decidingAttempt, measuredPoints, stationOf, type StationKey } from "./stick";
 
@@ -10,7 +9,7 @@ interface Row {
   key: string;
   label: string;
   position: number;
-  loadKg: number | null | undefined;
+  loadG: number;
   pushDist?: number;
   bend?: number;
   attempts: number;
@@ -20,7 +19,7 @@ interface Row {
 const columns: ColumnsType<Row> = [
   { title: "Trạm / Điểm", dataIndex: "label" },
   { title: <>Vị trí<br />(mm)</>, dataIndex: "position", width: "13%", align: "center", render: (v) => fmtNum(v) },
-  { title: <span title={CONFIGURED_LOAD_SOURCE}>Lực đè cài<br />đặt (kg)</span>, dataIndex: "loadKg", width: "13%", align: "center", render: (v) => fmtNum(v) },
+  { title: <span title={PLC_LOAD_SOURCE}>Lực đè cài<br />đặt (kg)</span>, dataIndex: "loadG", width: "13%", align: "center", render: (v) => fmtKg(v) },
   { title: <>Lực đè thực<br />tế (kg)</>, dataIndex: "pushDist", width: "19%", align: "center", render: (v) => fmtNum(v) },
   { title: <>Độ cong<br />(mm)</>, dataIndex: "bend", width: "14%", align: "center", render: (v) => fmtNum(v) },
   { title: <>Số<br />lần đo</>, dataIndex: "attempts", align: "center", width: 54 },
@@ -28,7 +27,7 @@ const columns: ColumnsType<Row> = [
 ];
 
 /** One row per measured point, with the values of the deciding attempt. */
-export default function PointTable({ record, loading, settings }: { record?: StickRecord; loading?: boolean; settings?: AppInfo["measurement"] }) {
+export default function PointTable({ record, loading }: { record?: StickRecord; loading?: boolean }) {
   const rows: Row[] = record
     ? (["BUTT", "TIP"] as StationKey[]).flatMap((key) => {
         const s = stationOf(record, key);
@@ -38,7 +37,7 @@ export default function PointTable({ record, loading, settings }: { record?: Sti
             key: `${key}-${i}`,
             label: `${key} · P${i + 1}`,
             position: p.position,
-            loadKg: settings?.[key === "BUTT" ? "butt" : "tip"].loadKg,
+            loadG: s.load,
             pushDist: a?.pushDist,
             bend: a?.bend,
             attempts: p.attemptCount,

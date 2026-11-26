@@ -190,19 +190,24 @@ pub async fn sku_summary(pool: &PgPool, f: &StickFilter) -> Result<Vec<SkuSummar
 pub struct StickDetail {
     pub id: i64,
     pub received_at: DateTime<Utc>,
-    /// Decoded from the stored raw words with the same decoder as the live record.
+    /// Measurements decoded from raw words; product_code uses the identity saved with this stick.
     pub record: StickRecord,
+    pub plc_product_code: String,
 }
 
 pub async fn stick_detail(pool: &PgPool, id: i64) -> Result<Option<StickDetail>, sqlx::Error> {
-    let row: Option<(i64, DateTime<Utc>, Vec<u8>)> =
-        sqlx::query_as("SELECT id, received_at, raw_words FROM stick WHERE id = $1")
+    let row: Option<(i64, DateTime<Utc>, Vec<u8>, String)> =
+        sqlx::query_as("SELECT id, received_at, raw_words, product_code FROM stick WHERE id = $1")
             .bind(id)
             .fetch_optional(pool)
             .await?;
-    Ok(row.and_then(|(id, received_at, raw)| {
+    Ok(row.and_then(|(id, received_at, raw, product_code)| {
         let words: Vec<u16> = raw.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
-        StickRecord::decode(&words).map(|record| StickDetail { id, received_at, record })
+        StickRecord::decode(&words).map(|mut record| {
+            let plc_product_code = record.product_code.clone();
+            record.product_code = product_code;
+            StickDetail { id, received_at, record, plc_product_code }
+        })
     }))
 }
 

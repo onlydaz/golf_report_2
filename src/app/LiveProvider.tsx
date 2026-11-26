@@ -15,6 +15,7 @@ import {
   type StickRecord,
 } from "../lib/plc";
 import { useEvents } from "../lib/useEvents";
+import { productionApi, type ProductionSnapshot } from "../lib/production";
 
 export type SaveState =
   | { state: "pending" }
@@ -26,6 +27,7 @@ export interface LiveRecord {
   record: StickRecord;
   receivedAt: Date;
   save: SaveState;
+  plcProductCode?: string;
 }
 
 interface Live {
@@ -45,6 +47,10 @@ interface LiveControl {
 }
 
 const LiveContext = createContext<Live | null>(null);
+const ProductionContext = createContext<{
+  snapshot?: ProductionSnapshot; selecting: boolean;
+  select: (customer: string, sku: string) => Promise<void>;
+} | null>(null);
 const RecipeContext = createContext<{
   status?: RecipePlcStatus;
   confirmed?: { handshake: RecipeHandshake; readAt: Date };
@@ -55,6 +61,8 @@ const RecipeContext = createContext<{
   applying: boolean;
   setApplying: (value: boolean) => void;
   refreshRecipe: () => void;
+  draftDirty: boolean;
+  setDraftDirty: (dirty: boolean) => void;
 } | null>(null);
 const DiagnosticsContext = createContext<{
   diagnostics: PlcDiagnostics | null; diagnosticsError: string; clearLog: () => Promise<void>;
@@ -62,6 +70,34 @@ const DiagnosticsContext = createContext<{
 const ControlContext = createContext<LiveControl>({ control: null, lastPoll: null, pollError: null });
 
 export function LiveProvider({ children }: { children: ReactNode }) {
+  const [production, setProduction] = useState<ProductionSnapshot>();
+  const [selecting, setSelecting] = useState(false);
+  const selectionInFlight = useRef(false);
+  const receiveProduction = (next: ProductionSnapshot) => setProduction(previous =>
+    !previous || next.revision >= previous.revision ? next : previous);
+  useEffect(() => {
+    let disposed = false;
+    let off: (() => void) | undefined;
+    void (async () => {
+      try {
+        const stop = await productionApi.onChanged(value => { if (!disposed) receiveProduction(value); });
+        if (disposed) { stop(); return; }
+        off = stop;
+        const value = await productionApi.get();
+        if (!disposed) receiveProduction(value);
+      } catch (e) {
+        if (!disposed) setProduction({ selection: null, revision: 0, error: errorText(e) });
+      }
+    })();
+    return () => { disposed = true; off?.(); };
+  }, []);
+  const selectProduction = async (customer: string, sku: string) => {
+    if (selectionInFlight.current) throw new Error("Đang lưu lựa chọn SKU. Vui lòng chờ.");
+    selectionInFlight.current = true; setSelecting(true);
+    try { receiveProduction(await productionApi.select(customer, sku)); }
+    finally { selectionInFlight.current = false; setSelecting(false); }
+  };
+  const [draftDirty, setDraftDirty] = useState(false);
   const [plcStatus, setPlcStatus] = useState<PlcStatus | null>(null);
   const [dbStatus, setDbStatus] = useState<DbStatus>({ connected: false, error: null });
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -150,7 +186,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     onPlcStatus(setPlcStatus),
     onControlArea((c) => setControl({ control: c, lastPoll: new Date(), pollError: null })),
     onPollError((e) => setControl((prev) => ({ ...prev, pollError: e }))),
-    onRecord((record) => setLast({ record, receivedAt: new Date(), save: { state: "pending" } })),
+    onRecord(({ record, productCode }) => setLast({ record: { ...record, productCode },
+      plcProductCode: record.productCode, receivedAt: new Date(), save: { state: "pending" } })),
     onDbStatus(setDbStatus),
     onSaved((s) => {
       setLast((l) => (l && l.record.recordSeq === s.recordSeq ? { ...l, save: { state: "saved", id: s.id } } : l));
@@ -170,14 +207,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const liveRecipe = useMemo(() => ({ status: recipeStatus, confirmed: confirmedRecipe,
     isLive: !!confirmedRecipeHandshake(recipeStatus), customer: activeRecipe.data?.customer,
     recipe: matchActiveRecipe(confirmedRecipe?.handshake, activeRecipe.data), recipeError: activeRecipe.error,
-    applying: recipeApplying, setApplying, refreshRecipe }),
-  [recipeStatus, confirmedRecipe, activeRecipe.data, activeRecipe.error, recipeApplying, setApplying, refreshRecipe]);
+    applying: recipeApplying, setApplying, refreshRecipe, draftDirty, setDraftDirty }),
+  [recipeStatus, confirmedRecipe, activeRecipe.data, activeRecipe.error, recipeApplying, setApplying, refreshRecipe, draftDirty]);
   return (
     <LiveContext.Provider value={live}>
       <ControlContext.Provider value={control}>
         <DiagnosticsContext.Provider value={{ diagnostics, diagnosticsError, clearLog }}>
           <RecipeContext.Provider value={liveRecipe}>
-            {children}
+            <ProductionContext.Provider value={{ snapshot: production, selecting, select: selectProduction }}>
+              {children}
+            </ProductionContext.Provider>
           </RecipeContext.Provider>
         </DiagnosticsContext.Provider>
       </ControlContext.Provider>
@@ -192,6 +231,11 @@ export function useLive(): Live {
 }
 
 export const useControl = () => useContext(ControlContext);
+export function useProduction() {
+  const value = useContext(ProductionContext);
+  if (!value) throw new Error("useProduction outside LiveProvider");
+  return value;
+}
 export function useLiveRecipe() {
   const value = useContext(RecipeContext);
   if (!value) throw new Error("useLiveRecipe outside LiveProvider");

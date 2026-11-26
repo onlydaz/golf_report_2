@@ -12,8 +12,8 @@ import { useOpenStick } from "../../lib/useOpenStick";
 import { ResultTag } from "../../components/Result";
 import { referenceCpk } from "../../lib/reportStats";
 import { reportTimeline } from "../../lib/reportTimeline";
-import { db, errorText, type AppInfo, type PointSummary, type ReportSummary, type StickFilter, type StickRow } from "../../lib/db";
-import { CONFIGURED_LOAD_SOURCE, fmtDateTime, fmtInt, fmtNum, fmtRate } from "../../lib/format";
+import { db, errorText, type PointSummary, type ReportSummary, type StickFilter, type StickRow } from "../../lib/db";
+import { PLC_LOAD_SOURCE, fmtDateTime, fmtInt, fmtKg, fmtNum, fmtRate } from "../../lib/format";
 import { useQuery } from "../../lib/useQuery";
 import { colors } from "../../theme/tokens";
 import "./Reports.css";
@@ -138,11 +138,10 @@ function Histogram({ report, loading }: { report?: ReportSummary; loading: boole
   </Card>;
 }
 
-const pointColumns = (settings?: AppInfo["measurement"]): ColumnsType<PointSummary> => [
+const pointColumns: ColumnsType<PointSummary> = [
   { title: "Trạm / Điểm", render: (_, p) => `${p.station} · P${p.pointNo}`, align: "left" },
   { title: "Vị trí (mm)", render: (_, p) => p.positionMin === p.positionMax ? fmtNum(p.positionMin) : `${fmtNum(p.positionMin)} – ${fmtNum(p.positionMax)}` },
-  { title: <span title={CONFIGURED_LOAD_SOURCE}>Lực đè cài đặt (kg)</span>, key: "configuredLoad",
-    render: (_, p) => fmtNum(p.station === "BUTT" ? settings?.butt.loadKg : p.station === "TIP" ? settings?.tip.loadKg : undefined) },
+  { title: <span title={PLC_LOAD_SOURCE}>Lực đè cài đặt TB (kg)</span>, dataIndex: "loadG", render: fmtKg },
   { title: "Lực đè thực tế TB (kg)", dataIndex: "pushDistMm", render: (v) => fmtNum(v) },
   { title: "Độ cong TB (mm)", dataIndex: "bendMm", render: (v) => fmtNum(v) },
   { title: "Số mẫu quyết định", dataIndex: "samples", render: fmtInt },
@@ -150,19 +149,19 @@ const pointColumns = (settings?: AppInfo["measurement"]): ColumnsType<PointSumma
   { title: "NG", dataIndex: "ng", render: fmtInt },
 ];
 
-const measurementColumns = (settings?: AppInfo["measurement"]): ColumnsType<StickRow> => [
+const measurementColumns: ColumnsType<StickRow> = [
   { title: "Thời gian đo", dataIndex: "receivedAt", render: fmtDateTime, width: 180 },
   { title: "SKU", dataIndex: "productCode", render: (v) => v || "Chưa gán SKU" },
   { title: "Số gậy", dataIndex: "stickNo", render: (v) => `#${v}`, width: 90 },
-  { title: <span title={CONFIGURED_LOAD_SOURCE}>Lực đè cài đặt BUTT (kg)</span>, key: "buttConfiguredLoad", render: () => fmtNum(settings?.butt.loadKg), width: 145 },
-  { title: <span title={CONFIGURED_LOAD_SOURCE}>Lực đè cài đặt TIP (kg)</span>, key: "tipConfiguredLoad", render: () => fmtNum(settings?.tip.loadKg), width: 135 },
+  { title: <span title={PLC_LOAD_SOURCE}>Lực đè cài đặt BUTT (kg)</span>, dataIndex: "buttLoadG", render: fmtKg, width: 145 },
+  { title: <span title={PLC_LOAD_SOURCE}>Lực đè cài đặt TIP (kg)</span>, dataIndex: "tipLoadG", render: fmtKg, width: 135 },
   { title: "BUTT", dataIndex: "buttResult", render: (v) => <ResultTag value={v} />, width: 90 },
   { title: "TIP", dataIndex: "tipResult", render: (v) => <ResultTag value={v} />, width: 90 },
   { title: "Overall", dataIndex: "overallResult", render: (v) => <ResultTag value={v} />, width: 90 },
 ];
 
 export default function Reports() {
-  const { dbStatus, info } = useLive();
+  const { dbStatus } = useLive();
   const [draft, setDraft] = useState<Draft>(defaults);
   const [filter, setFilter] = useState<StickFilter>(() => toFilter(defaults()));
   const [revision, setRevision] = useState(0);
@@ -189,13 +188,12 @@ export default function Reports() {
     const d = defaults(); setDraft(d); setFilter(toFilter(d)); setPage(1); setValidation(""); setRevision((v) => v + 1);
   };
   const exportExcel = async () => {
-    if (!info) { messages.error("Chưa đọc được cấu hình measurement để xuất Excel."); return; }
     setExporting(true); setExportCount(0);
     try {
       const path = await save({ defaultPath: `New-Ocean-${dayjs().format("YYYYMMDD-HHmmss")}.xlsx`, filters: [{ name: "Excel", extensions: ["xlsx"] }] });
       if (!path) return;
       const { buildReportExcel } = await import("../../lib/reportExcel");
-      const result = await buildReportExcel(filter, setExportCount, info.measurement);
+      const result = await buildReportExcel(filter, setExportCount);
       if (!result) { messages.info("Không có dữ liệu phù hợp để xuất Excel."); return; }
       await writeFile(path, result.bytes);
       messages.success(`Đã xuất Excel ${fmtInt(result.count)} gậy.`);
@@ -239,7 +237,7 @@ export default function Reports() {
           <Button type="primary" htmlType="submit" icon={<FileTextOutlined />} loading={report.loading} disabled={!dbStatus.connected || exporting}>Tạo báo cáo</Button>
           <Button onClick={reset} disabled={exporting}>Đặt lại</Button>
           <Button className="report-excel" icon={<FileExcelOutlined />} onClick={exportExcel} loading={exporting}
-            disabled={!dbStatus.connected || !info || report.loading || !s?.total}>Xuất Excel</Button>
+            disabled={!dbStatus.connected || report.loading || !s?.total}>Xuất Excel</Button>
           {exporting && <span role="status">Đang xuất {fmtInt(exportCount)} gậy…</span>}
         </div>
         </div>
@@ -260,11 +258,11 @@ export default function Reports() {
     <QualityCharts key={`${JSON.stringify(filter)}-${revision}`} report={data} loading={report.loading} filter={filter} />
     <Histogram report={data} loading={report.loading} />
     <Card className="section-card" title="Tổng hợp theo điểm đo">
-      <Table<PointSummary> className="report-point-table" size="small" rowKey={(p) => `${p.station}-${p.pointNo}`} columns={pointColumns(info?.measurement)}
+      <Table<PointSummary> className="report-point-table" size="small" rowKey={(p) => `${p.station}-${p.pointNo}`} columns={pointColumns}
         dataSource={data?.points ?? []} loading={report.loading} pagination={false} scroll={{ x: 1100 }} locale={{ emptyText: empty() }} />
     </Card>
     <Card className="section-card" title="Phép đo trong báo cáo" extra={<span className="report-note">{fmtInt(list.data?.total)} gậy</span>}>
-      <Table<StickRow> className="report-measurements" rowKey="id" columns={measurementColumns(info?.measurement)} dataSource={list.data?.items ?? []}
+      <Table<StickRow> className="report-measurements" rowKey="id" columns={measurementColumns} dataSource={list.data?.items ?? []}
         loading={list.loading} scroll={{ x: 1000 }}
         pagination={{ current: page, pageSize: 10, total: list.data?.total ?? 0, onChange: setPage, showSizeChanger: false, hideOnSinglePage: true }}
         onRow={(r) => ({ onClick: () => openStick({ id: r.id }), tabIndex: 0, "aria-label": `Xem chi tiết gậy #${r.stickNo}`,

@@ -30,6 +30,7 @@ struct Machine {
     lose_reset_response: bool,
     hold_reset: bool,
     record_on_command: bool,
+    reject_result_ack: bool,
 }
 impl Default for Machine {
     fn default() -> Self {
@@ -49,6 +50,7 @@ impl Default for Machine {
             lose_reset_response: false,
             hold_reset: false,
             record_on_command: false,
+            reject_result_ack: false,
         }
     }
 }
@@ -98,6 +100,9 @@ impl Service for Fake {
                         )
                     }
                     Request::WriteSingleRegister(addr, value) => {
+                        if addr == 25012 && m.reject_result_ack {
+                            return Err(ExceptionCode::ServerDeviceFailure);
+                        }
                         m.writes.push((6, addr, vec![value]));
                         m.regs[addr as usize] = value;
                         let mut delay = false;
@@ -661,4 +666,41 @@ fn commissioning_is_fail_closed_and_fc16_limit_has_no_default() {
     let mut invalid = [0; 20];
     invalid[4] = 0xff;
     assert!(Handshake::decode(&invalid).is_err());
+}
+
+#[tokio::test]
+async fn shutdown_refuses_pending_recipe_and_waits_for_result_ack_retry() {
+    let transfer = transfer();
+    assert!(transfer.ensure_shutdown_safe().is_ok());
+    {
+        let mut pending = transfer.pending.lock().await;
+        assert!(transfer.ensure_shutdown_safe().is_err());
+        *pending = Some(Expected { sku: "MH1253R".into(), rev: 1 });
+    }
+    assert!(transfer.ensure_shutdown_safe().is_err());
+
+    let h = harness(Machine { reject_result_ack: true, ..Machine::default() }).await;
+    let (pause, pause_rx) = watch::channel(false);
+    let (paused, mut paused_rx) = watch::channel(false);
+    let (events, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let saves = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let saved = saves.clone();
+    let poller = tokio::spawn(crate::plc::run_poller_with_shutdown(h.plc.clone(), Duration::from_millis(10),
+        move |e| { let _ = events.send(e); },
+        move |_| { saved.fetch_add(1, std::sync::atomic::Ordering::SeqCst); async {} }, pause_rx, paused));
+    timeout(Duration::from_secs(2), async {
+        while !matches!(rx.recv().await, Some(PollEvent::Control(c)) if c.data_ready == 0) {}
+    }).await.unwrap();
+    h.machine.lock().unwrap().regs[25011] = 1;
+    timeout(Duration::from_secs(2), async {
+        while !matches!(rx.recv().await, Some(PollEvent::Error(_))) {}
+    }).await.unwrap();
+    pause.send_replace(true);
+    assert!(timeout(Duration::from_millis(80), paused_rx.wait_for(|v| *v)).await.is_err());
+    h.machine.lock().unwrap().reject_result_ack = false;
+    timeout(Duration::from_secs(2), paused_rx.wait_for(|v| *v)).await.unwrap().unwrap();
+    assert_eq!(h.machine.lock().unwrap().regs[25012], 1);
+    assert_eq!(h.machine.lock().unwrap().regs[25008], 1);
+    assert_eq!(saves.load(std::sync::atomic::Ordering::SeqCst), 1);
+    poller.abort();
 }

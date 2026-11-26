@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Empty, InputNumber, Modal, Popconfirm, Select, Space, Spin, Table, Tabs, Tag, message } from "antd";
 import { useBlocker } from "react-router";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import PageHeader from "../../components/PageHeader";
-import { useLive, useLiveRecipe } from "../../app/LiveProvider";
+import { useLive, useLiveRecipe, useProduction } from "../../app/LiveProvider";
+import { skuMismatch } from "../../lib/production";
 import { errorText } from "../../lib/db";
 import { recipeApi, recipeErrors, recipeApplyBlockReason, transferFailure } from "../../lib/recipe";
 import type { Recipe as RecipeData, RecipePoint, RecipeStation, RecipeSummary, StationName, RecipeTransferReport } from "../../lib/recipe";
@@ -66,6 +66,7 @@ function StationEditor({ name, station, disabled, onChange }: {
 
 export default function Recipe() {
   const { dbStatus, plcStatus } = useLive();
+  const production = useProduction();
   const [messages, messageHolder] = message.useMessage();
   const [modal, modalHolder] = Modal.useModal();
   const [list, setList] = useState<RecipeSummary[]>([]);
@@ -75,16 +76,15 @@ export default function Recipe() {
   const [draft, setDraft] = useState<RecipeData>();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { status: plcRecipe, applying, setApplying, refreshRecipe } = useLiveRecipe();
+  const { status: plcRecipe, applying, setApplying, refreshRecipe, setDraftDirty } = useLiveRecipe();
   const transferInFlight = useRef(false);
   const [transferNotice, setTransferNotice] = useState<RecipeTransferReport>();
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [showValidation, setShowValidation] = useState(false);
-  const [reload, setReload] = useState(0);
   const dirty = !!draft && JSON.stringify(draft.stations) !== JSON.stringify(saved?.stations);
-  const busy = loading || saving || applying;
-  const writing = saving || applying;
+  const busy = loading || saving || applying || production.selecting;
+  const writing = saving || applying || production.selecting;
   const plcConnected = plcStatus?.state === "connected";
   const applyBlocked = recipeApplyBlockReason(saved, dirty, dbStatus.connected, plcConnected, busy, plcRecipe)
     ?? (loadError ? "Không tải được công thức. Hãy tải lại." : null);
@@ -97,25 +97,19 @@ export default function Recipe() {
   currentDraft.current = draft;
 
   useEffect(() => {
+    setDraftDirty(dirty);
+    return () => setDraftDirty(false);
+  }, [dirty, setDraftDirty]);
+
+  useEffect(() => {
+    // Desktop close is handled once, globally, with backend shutdown validation.
+    if (isTauri()) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (closeState.current.dirty || closeState.current.writing) { event.preventDefault(); event.returnValue = ""; }
     };
     window.addEventListener("beforeunload", beforeUnload);
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    if (isTauri()) {
-      getCurrentWindow().onCloseRequested(async event => {
-        if (closeState.current.writing) { event.preventDefault(); return; }
-        if (closeState.current.dirty) {
-          const confirmed = await modal.confirm({ title: "Đóng khi chưa lưu công thức?",
-            content: "Các thay đổi chưa lưu sẽ bị mất.", okText: "Bỏ thay đổi và đóng", cancelText: "Tiếp tục sửa" });
-          if (!confirmed) event.preventDefault();
-        }
-      }).then(stop => { if (disposed) stop(); else unlisten = stop; })
-        .catch(e => messages.error(`Không thể bật cảnh báo đóng cửa sổ: ${errorText(e)}`));
-    }
-    return () => { disposed = true; unlisten?.(); window.removeEventListener("beforeunload", beforeUnload); };
-  }, [modal, messages]);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, []);
 
   const runTransfer = async (reconcile = false) => {
     if (transferInFlight.current || busy || (!reconcile && (applyBlocked || !saved))) return;
@@ -145,14 +139,20 @@ export default function Recipe() {
       setList(rows);
     }).catch(e => { if (active) setLoadError(errorText(e)); });
     return () => { active = false; };
-  }, [dbStatus.connected, reload]);
+  }, [dbStatus.connected]);
 
   useEffect(() => {
-    if (!sku) setSku(list.find(row => row.customer === customer)?.sku);
-  }, [list, customer, sku]);
+    const selection = production.snapshot?.selection;
+    if (selection) { setCustomer(selection.customer); setSku(selection.sku); }
+  }, [production.snapshot?.selection]);
+
+  const chooseSku = async (value: string) => {
+    try { await production.select(customer, value); setSku(value); }
+    catch (e) { messages.error(`Không đổi được SKU sản xuất: ${errorText(e)}`); }
+  };
 
   useEffect(() => {
-    // Reconnection must not replace an editor's draft. Explicit reload clears it first.
+    // Reconnection must not replace an editor's draft.
     if (!sku || !dbStatus.connected || currentDraft.current?.sku === sku) {
       setLoading(false);
       return;
@@ -168,7 +168,7 @@ export default function Recipe() {
     }).catch(e => { if (active) setLoadError(errorText(e)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [sku, dbStatus.connected, reload]);
+  }, [sku, dbStatus.connected]);
 
   const discardThen = async (action: () => void) => {
     if (busy) return;
@@ -202,22 +202,24 @@ export default function Recipe() {
         <label className="filter-field"><span>Khách hàng</span>
           <Select aria-label="Khách hàng" value={customer} disabled={busy} options={[{ value: "TM" }, { value: "MCC" }]}
             onChange={value => { if (value !== customer) void discardThen(() => {
-              setCustomer(value); setSku(list.find(row => row.customer === value)?.sku);
+              setCustomer(value); setSku(undefined);
             }); }} />
         </label>
         <label className="filter-field"><span>Mã hàng (SKU)</span>
           <Select aria-label="Mã hàng (SKU)" value={sku} placeholder="Chọn mã hàng" disabled={busy || !dbStatus.connected}
             options={list.filter(row => row.customer === customer).map(row => ({ value: row.sku, label: row.sku }))}
-            onChange={value => { if (value !== sku) void discardThen(() => setSku(value)); }} />
+            onChange={value => { if (value !== sku) void discardThen(() => { void chooseSku(value); }); }} />
         </label>
-        <Button disabled={busy || !dbStatus.connected} onClick={() => void discardThen(() => setReload(v => v + 1))}>Tải lại</Button>
-        {saved && <div className="recipe-summary"><strong>{saved.sku}</strong>
+        {saved && <div className="recipe-summary">
           <Space wrap>
             <Tag color={saved.configured ? "green" : "gold"}>{saved.configured ? "Đã thiết lập" : "Chưa thiết lập"}</Tag>
             {dirty && <Tag color="orange">Có thay đổi chưa lưu</Tag>}</Space>
         </div>}
       </div>
     </Card>
+    {production.snapshot?.error && <Alert type="error" showIcon title={production.snapshot.error} />}
+    {plcConnected && skuMismatch(production.snapshot?.selection?.sku ?? "", plcRecipe?.handshake?.actSku) &&
+      <Alert type="warning" showIcon title={skuMismatch(production.snapshot?.selection?.sku ?? "", plcRecipe?.handshake?.actSku)} />}
     {loadError && <Alert type="error" showIcon title="Không tải được công thức" description={loadError} />}
     {saveError && <Alert type="error" showIcon title="Lưu công thức thất bại" description={saveError} />}
     <Card className="section-card" title="Công thức đang áp dụng trên PLC">

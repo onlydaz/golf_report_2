@@ -10,7 +10,7 @@ password = "postgres"
 dbname = "golf_report"
 max_connections = 5
 
-# load_kg is the current display/export setpoint on Monitor, History, Detail and Reports.
+# Display/export setpoint comes from PLC Load (g -> kg), not the legacy load_kg below.
 # Raw PLC Load is stored unchanged. Actual load (PushDist, kg) and positions come from PLC results.
 # Bend limits are references only; OK/NG always comes from the PLC.
 # A station table written here replaces that station's defaults as a whole:

@@ -78,6 +78,7 @@ export interface SkuSummary {
 }
 
 export interface StickDetail {
+  plcProductCode: string;
   id: number;
   receivedAt: string;
   record: StickRecord;
@@ -101,7 +102,7 @@ export interface AppInfo {
 
 export interface PointSummary {
   station: string; pointNo: number; positionMin: number | null; positionMax: number | null;
-  /** loadG: raw PLC Load in g; pushDistMm: mean actual load in kg (legacy name). Display setpoint comes from measurement config. */
+  /** loadG: mean PLC setpoint Load in g; pushDistMm: mean actual load in kg (legacy name). */
   loadG: number | null; pushDistMm: number | null; bendMm: number | null;
   samples: number; points: number; ok: number; ng: number;
 }

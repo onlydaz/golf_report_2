@@ -148,6 +148,14 @@ pub struct RecipeTransfer {
 }
 
 impl RecipeTransfer {
+    pub fn ensure_shutdown_safe(&self) -> Result<(), String> {
+        let pending = self.pending.try_lock().map_err(|_| "Đang nạp/đối chiếu công thức PLC. Vui lòng chờ.")?;
+        if pending.is_some() {
+            return Err("Handshake công thức chưa hoàn tất. Hãy kiểm tra và hoàn tất handshake PLC trước khi thoát.".into());
+        }
+        Ok(())
+    }
+
     pub fn new(config: TransferConfig) -> Self {
         Self {
             config,

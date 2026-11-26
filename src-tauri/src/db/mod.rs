@@ -20,6 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::config::DbConfig;
 use crate::plc::record::StickRecord;
 
+#[cfg(test)]
 pub use store::save_record;
 
 /// Records waiting to be saved (also covers the time before the DB is reachable).
@@ -94,6 +95,7 @@ pub struct DbError {
 /// One record to save; the writer answers on `done` once the save finished.
 pub struct SaveRequest {
     pub record: StickRecord,
+    pub product_code: String,
     pub done: oneshot::Sender<Result<i64, String>>,
 }
 
@@ -135,6 +137,7 @@ pub fn spawn_writer(
     app: AppHandle,
     status: DbStatusState,
     shared: DbPool,
+    lifecycle: crate::shutdown::Shutdown,
 ) -> mpsc::Sender<SaveRequest> {
     let (tx, mut rx) = mpsc::channel::<SaveRequest>(QUEUE_CAPACITY);
     tauri::async_runtime::spawn(async move {
@@ -151,8 +154,8 @@ pub fn spawn_writer(
         let _ = shared.0.set(pool.clone());
         status.set(&app, DbStatus { connected: true, error: None });
 
-        while let Some(SaveRequest { record: r, done }) = rx.recv().await {
-            let result = match save_record(&pool, &r).await {
+        while let Some(SaveRequest { record: r, product_code, done }) = rx.recv().await {
+            let result = match store::save_production_record(&pool, &r, &product_code).await {
                 Ok(id) => {
                     let _ = app.emit(
                         "db://saved",
@@ -170,6 +173,7 @@ pub fn spawn_writer(
                 }
             };
             // The poller may have stopped waiting (timeout); that is fine.
+            lifecycle.finish_save(result.is_ok());
             let _ = done.send(result);
         }
     });

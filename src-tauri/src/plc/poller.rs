@@ -10,6 +10,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use tokio::time::{interval, MissedTickBehavior};
+use tokio::sync::watch;
 
 use super::control::{read_control_area, ControlArea};
 use super::record::StickRecord;
@@ -58,11 +59,30 @@ async fn ack(plc: &PlcHandle, count: i32) -> Result<(), PlcError> {
 }
 
 /// Run until the PLC actor stops.
+#[cfg(test)]
 pub async fn run_poller<F, Fut>(
+    plc: PlcHandle,
+    period: Duration,
+    emit: impl FnMut(PollEvent),
+    save: F,
+) where
+    F: FnMut(StickRecord) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let (_keep_running, pause) = watch::channel(false);
+    let (paused, _) = watch::channel(false);
+    run_poller_with_shutdown(plc, period, emit, save, pause, paused).await;
+}
+
+/// Pauses only between cycles, after save and ACK (including pending ACK retries).
+/// Cancelling shutdown resumes the same loop with prev_ready/pending_ack preserved.
+pub async fn run_poller_with_shutdown<F, Fut>(
     plc: PlcHandle,
     period: Duration,
     mut emit: impl FnMut(PollEvent),
     mut save: F,
+    mut pause: watch::Receiver<bool>,
+    paused: watch::Sender<bool>,
 ) where
     F: FnMut(StickRecord) -> Fut,
     Fut: Future<Output = ()>,
@@ -75,11 +95,30 @@ pub async fn run_poller<F, Fut>(
     let mut pending_ack: Option<i32> = None;
 
     loop {
-        // Only poll while connected.
-        if status.wait_for(|s| *s == PlcStatus::Connected).await.is_err() {
-            return; // actor gone
+        if pending_ack.is_none() && *pause.borrow() {
+            paused.send_replace(true);
+            if pause.wait_for(|requested| !requested).await.is_err() { return; }
+            paused.send_replace(false);
         }
-        tick.tick().await;
+        // Only poll while connected.
+        tokio::select! {
+            biased;
+            result = pause.changed(), if pending_ack.is_none() => {
+                if result.is_err() { return; }
+                continue;
+            },
+            result = status.wait_for(|s| *s == PlcStatus::Connected) => {
+                if result.is_err() { return; }
+            }
+        }
+        tokio::select! {
+            biased;
+            result = pause.changed(), if pending_ack.is_none() => {
+                if result.is_err() { return; }
+                continue;
+            },
+            _ = tick.tick() => {}
+        }
 
         let read_started = Instant::now();
         let result = read_control_area(&plc).await;
