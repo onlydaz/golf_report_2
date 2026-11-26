@@ -6,7 +6,12 @@
 .plc-settings .ant-card-body { display: flex; flex-direction: column; gap: 18px; }
 .plc-settings .ant-input { min-height: 38px; }
 .plc-settings-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.plc-connection-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.plc-connection-left, .plc-connection-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.plc-read-count { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.plc-record-source { display: block; margin-top: 4px; font-size: 11px; font-weight: 400; color: var(--c-navy-500); }
+.plc-read-error { margin-bottom: 16px; }
+.plc-connection-left .control-panel .ant-table-content { overflow-x: auto; }
+.plc-connection-left .control-panel table { min-width: 600px; }
 .plc-connection-right .ant-tag { margin-inline-end: 0; }
 .plc-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
 .plc-metrics > div { background: #f0f4f8; border-radius: 8px; padding: 12px; min-width: 0; }

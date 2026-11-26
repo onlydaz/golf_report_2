@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, Empty, Popconfirm, Spin, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Empty, Spin, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router";
 import { useControl, useLive, type SaveState } from "../../app/LiveProvider";
 import BendChart from "../../components/BendChart";
-import ControlAreaPanel from "../../components/ControlAreaPanel";
 import PageHeader from "../../components/PageHeader";
 import PointTable from "../../components/PointTable";
 import { ResultTag, ResultTiles } from "../../components/Result";
 import { useOpenStick } from "../../lib/useOpenStick";
 import { useQuery } from "../../lib/useQuery";
 import { db, type StickPage, type StickRow, type StickStats } from "../../lib/db";
-import { resetReadCount, type StickRecord } from "../../lib/plc";
+import { type StickRecord } from "../../lib/plc";
 import { fmtInt, fmtKg, fmtNum, fmtRate, fmtTime } from "../../lib/format";
 import "./Monitor.css";
 
@@ -68,7 +67,7 @@ function SummaryCards({ stats, loading, startedAt }: { stats?: StickStats; loadi
 
 function PlcStateCard() {
   const { plcStatus } = useLive();
-  const { control, lastPoll, pollError } = useControl();
+  const { lastPoll, pollError } = useControl();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -89,52 +88,6 @@ function PlcStateCard() {
     <Card className="section-card">
       <div className="kicker">Trạng thái máy</div>
       <strong className={`monitor-machine monitor-machine-${tone}`}>{label}</strong>
-      <div className="monitor-machine-detail">
-        DataReady <Tag>{control?.dataReady ?? "—"}</Tag>
-        <br />
-        Lần đọc cuối {lastPoll ? fmtTime(lastPoll) : "—"}
-      </div>
-      {pollError && <div className="monitor-machine-error">{pollError.message}</div>}
-      {plcStatus?.state === "disconnected" && <div className="monitor-machine-error">{plcStatus.reason}</div>}
-    </Card>
-  );
-}
-
-/** `stickNo`: StickNo of the last stick (not part of the control area). */
-function CountersCard({ stickNo }: { stickNo?: number }) {
-  const { plcStatus } = useLive();
-  const { control } = useControl();
-  const [resetting, setResetting] = useState(false);
-  const reset = async () => {
-    setResetting(true);
-    try {
-      await resetReadCount();
-      message.success("Đã đặt PC_ReadCount về 0");
-    } catch (e) {
-      const msg = typeof e === "object" && e && "message" in e ? String(e.message) : String(e);
-      message.error(`Không reset được PC_ReadCount: ${msg}`);
-    } finally {
-      setResetting(false);
-    }
-  };
-  return (
-    <Card className="section-card">
-      <div className="kicker">Bộ đếm PLC</div>
-      <dl className="monitor-counters">
-        <div><dt>TotalCount</dt><dd>{fmtInt(control?.totalCount)}</dd></div>
-        <div>
-          <dt>PC_ReadCount</dt>
-          <dd className="monitor-counter-reset">
-            {fmtInt(control?.pcReadCount)}
-            <Popconfirm title="Đặt PC_ReadCount về 0?" okText="Reset" cancelText="Huỷ" onConfirm={reset}>
-              <Button size="small" loading={resetting} disabled={plcStatus?.state !== "connected"}>
-                Reset
-              </Button>
-            </Popconfirm>
-          </dd>
-        </div>
-        <div><dt>StickNo</dt><dd>{fmtInt(stickNo)}</dd></div>
-      </dl>
     </Card>
   );
 }
@@ -275,7 +228,6 @@ export default function Monitor() {
         </Card>
         <PlcStateCard />
         <SummaryCards stats={stats.data} loading={stats.loading} startedAt={info?.startedAt} />
-        <CountersCard stickNo={current?.record.stickNo} />
       </section>
 
       <section className="monitor-mid">
@@ -303,7 +255,6 @@ export default function Monitor() {
         onOpen={(id) => openStick({ id })}
       />
 
-      <ControlAreaPanel />
     </div>
   );
 }
