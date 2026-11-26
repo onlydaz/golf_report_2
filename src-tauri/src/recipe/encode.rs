@@ -70,15 +70,16 @@ fn put_station(words: &mut [u16], base: usize, station: &Station) {
     }
 }
 
-/// Transfer-only restriction: the encoder/storage still support all 10 positions.
+/// Recipe storage/encoding supports 10 points; the current result mapping supports only 4 per station.
 pub fn check_result_capacity(recipe: &Recipe) -> Result<(), String> {
-    for (name, station, limit) in [
-        ("BUTT", &recipe.stations.butt, 4),
-        ("TIP", &recipe.stations.tip, 1),
+    let limit = crate::plc::registers::record::station::NUM_POINTS as i16;
+    for (name, station) in [
+        ("BUTT", &recipe.stations.butt),
+        ("TIP", &recipe.stations.tip),
     ] {
         if station.enabled == Some(1) && station.num_points.is_some_and(|n| n > limit) {
             return Err(format!(
-                "Chưa cho phép nạp: trạm {name} tối đa {limit} điểm theo khả năng thu thập kết quả hiện tại."
+                "Chưa cho phép nạp: trạm {name} có hơn {limit} điểm, vượt mapping kết quả đo hiện tại. Cần kỹ thuật viên xác nhận mapping tương ứng."
             ));
         }
     }
@@ -152,11 +153,19 @@ pub(super) mod tests {
             ),
         ] {
             let offset = base - 20020;
-            assert_eq!(&w[offset..offset + 4], &[1, 10, 3, 17]);
+            assert_eq!(
+                &w[offset..offset + 4],
+                &[1, station.num_points.unwrap() as u16, 3, 17]
+            );
             assert_eq!(&w[offset + 4..offset + 8], &[0, 0x4148, 0, 0x3e80]);
             assert!(w[offset + 8..offset + 12].iter().all(|&v| v == 0));
             assert!(w[offset + 112..offset + 120].iter().all(|&v| v == 0));
-            for (i, point) in station.points.iter().enumerate() {
+            for (i, point) in station
+                .points
+                .iter()
+                .take(station.num_points.unwrap() as usize)
+                .enumerate()
+            {
                 for (addr, value) in arrays.into_iter().zip([
                     point.pos_linear,
                     point.pos_press_fixed,
@@ -175,21 +184,34 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn unused_disabled_and_padding_are_zero_and_validation_is_reused() {
+    fn unused_disabled_and_padding_are_zero_without_mutating_saved_values() {
         let mut recipe = saved_recipe();
         recipe.stations.butt.points[9] = recipe.stations.butt.points[0].clone();
         recipe.stations.tip.points[0] = recipe.stations.butt.points[0].clone();
         let w = encode(&recipe).unwrap();
         assert_eq!(w[5], b'R' as u16);
         assert!(w[6..12].iter().all(|&v| v == 0));
-        for start in [20048, 20068, 20088, 20108, 20128] {
-            assert!(
-                w[start - 20020 + 2..start - 20020 + 20]
-                    .iter()
-                    .all(|&v| v == 0)
-            );
+        for (count, starts) in [
+            (4, [20048, 20068, 20088, 20108, 20128]),
+            (1, [20168, 20188, 20208, 20228, 20248]),
+        ] {
+            for start in starts {
+                assert!(
+                    w[start - 20020 + 2 * count..start - 20020 + 20]
+                        .iter()
+                        .all(|&v| v == 0)
+                );
+            }
         }
-        assert!(w[136..].iter().all(|&v| v == 0));
+        assert_eq!(&w[136..138], &[1, 1]);
+        assert!(w[256..].iter().all(|&v| v == 0));
+        assert!(check_result_capacity(&recipe).is_ok());
+        assert!(recipe.stations.butt.points[9].load.is_some());
+        recipe.stations.tip.enabled = Some(0);
+        recipe.stations.tip.num_points = Some(10);
+        let disabled = encode(&recipe).unwrap();
+        assert!(disabled[136..256].iter().all(|&v| v == 0));
+        assert!(recipe.stations.tip.points[0].load.is_some());
         assert!(check_result_capacity(&recipe).is_ok());
         recipe.stations.butt.points[0].bend = Some(f64::NAN);
         assert!(encode(&recipe).is_err());
@@ -198,10 +220,10 @@ pub(super) mod tests {
         assert!(encode(&recipe).is_err());
         recipe = saved_recipe();
         recipe.stations.butt.num_points = Some(5);
-        assert!(check_result_capacity(&recipe).is_err());
+        assert!(encode(&recipe).is_err());
         recipe = saved_recipe();
         recipe.stations.tip.enabled = Some(1);
         recipe.stations.tip.num_points = Some(2);
-        assert!(check_result_capacity(&recipe).is_err());
+        assert!(encode(&recipe).is_err());
     }
 }

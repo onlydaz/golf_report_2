@@ -128,7 +128,7 @@ pub mod record {
         pub const NG_POINT: u16 = 2;
         /// INT. Reserved.
         pub const RESERVE1: u16 = 3;
-        /// REAL, g. Load placed on the stick end during measurement.
+        /// REAL, g. Configured load; converted to kg only for display.
         pub const LOAD: u16 = 4;
         /// INT[2]. Reserved.
         pub const RESERVE2: u16 = 6;
@@ -171,7 +171,8 @@ pub mod record {
     /// One attempt: offsets relative to [`point::attempt`].
     pub mod attempt {
         pub const LEN: u16 = 4;
-        /// REAL, mm. Push distance.
+        /// REAL, kg. Actual applied load, confirmed for the current PLC.
+        /// Legacy PushDist name; the old workbook labels this mm. No scaling here.
         pub const PUSH_DIST: u16 = 0;
         /// REAL, mm. Measured bend.
         pub const BEND: u16 = 2;

@@ -71,7 +71,7 @@ fn finite(value: Option<f64>) -> bool {
     value.is_none_or(|v| v.is_finite() && (v as f32).is_finite())
 }
 
-fn validate_station(s: &mut Station, name: &str) -> Result<(), String> {
+fn validate_station(s: &Station, name: &str) -> Result<(), String> {
     if !finite(s.load_tol)
         || !finite(s.bend_tol)
         || s.points.iter().any(|p| {
@@ -85,15 +85,7 @@ fn validate_station(s: &mut Station, name: &str) -> Result<(), String> {
         ));
     }
     match s.enabled {
-        Some(0) => {
-            // Excel: Enable=0 skips station checks. Never retain stale settings
-            // as usable data when an operator disables a station.
-            *s = Station {
-                enabled: Some(0),
-                ..Station::default()
-            };
-            return Ok(());
-        }
+        Some(0) => return Ok(()), // Excel: disabled stations skip range/required checks.
         Some(1) => {}
         _ => return Err(format!("{name}: chọn sử dụng trạm (0 hoặc 1).")),
     }
@@ -112,11 +104,8 @@ fn validate_station(s: &mut Station, name: &str) -> Result<(), String> {
     if !s.load_tol.is_some_and(|v| v >= 0.0) || !s.bend_tol.is_some_and(|v| v >= 0.0) {
         return Err(format!("{name}: nhập đủ hai dung sai không âm."));
     }
-    for (i, p) in s.points.iter_mut().enumerate() {
-        if i >= count as usize {
-            *p = Point::default();
-            continue;
-        }
+    // Preserve unused saved values; the encoder writes zeroes for unused PLC positions.
+    for (i, p) in s.points.iter().take(count as usize).enumerate() {
         if p.pos_linear.is_none() || p.pos_press_fixed.is_none() || p.pos_force.is_none() {
             return Err(format!("{name} · P{}: nhập đủ ba vị trí (mm).", i + 1));
         }
@@ -138,8 +127,8 @@ impl SaveRecipe {
         if self.recipe_rev < 0 {
             return Err("Phiên bản công thức không hợp lệ.".into());
         }
-        validate_station(&mut self.stations.butt, "BUTT")?;
-        validate_station(&mut self.stations.tip, "TIP")
+        validate_station(&self.stations.butt, "BUTT")?;
+        validate_station(&self.stations.tip, "TIP")
     }
 }
 
@@ -150,7 +139,7 @@ pub(crate) mod tests {
     pub fn valid_recipe() -> SaveRecipe {
         let mut butt = Station {
             enabled: Some(1),
-            num_points: Some(1),
+            num_points: Some(4),
             max_rot: Some(0),
             settle_time: Some(0),
             load_tol: Some(0.0),
@@ -164,64 +153,65 @@ pub(crate) mod tests {
             load: Some(100.0),
             bend: Some(1.0),
         };
+        for i in 1..4 {
+            butt.points[i] = butt.points[0].clone();
+        }
+        let mut tip = butt.clone();
+        tip.num_points = Some(1);
+        tip.points[1..].fill(Point::default());
         SaveRecipe {
             sku: "MH1253R".into(),
             recipe_rev: 0,
-            stations: Stations {
-                butt,
-                tip: Station {
-                    enabled: Some(0),
-                    ..Station::default()
-                },
-            },
+            stations: Stations { butt, tip },
         }
     }
 
     #[test]
-    fn unset_is_not_zero_and_disabled_station_skips_ranges() {
+    fn validates_enable_and_counts_without_defaults_or_deleting_unused_values() {
         let mut r = valid_recipe();
-        assert!(r.validate_and_normalize().is_ok());
-        r.stations.butt.max_rot = None;
-        assert!(r.validate_and_normalize().is_err());
+        r.stations.butt.points[9] = r.stations.butt.points[0].clone();
+        let original = r.stations.clone();
+        r.validate_and_normalize().unwrap();
+        assert_eq!(r.stations, original);
         r.stations.butt.enabled = Some(0);
-        r.stations.butt.num_points = Some(-1);
-        assert!(r.validate_and_normalize().is_ok());
-        assert_eq!(
-            r.stations.butt,
-            Station {
-                enabled: Some(0),
-                ..Station::default()
-            }
-        );
+        r.stations.butt.num_points = None;
+        r.stations.butt.max_rot = None;
+        let disabled = r.stations.butt.clone();
+        r.validate_and_normalize().unwrap();
+        assert_eq!(r.stations.butt, disabled);
         r.stations.butt.enabled = None;
         assert!(r.validate_and_normalize().is_err());
         r.stations.butt.enabled = Some(2);
         assert!(r.validate_and_normalize().is_err());
+        r.stations = Stations::default();
+        assert!(r.validate_and_normalize().is_err());
+        assert_eq!(r.stations.butt, Station::default());
     }
 
     #[test]
-    fn point_sets_keep_indexes_and_clear_unused_data() {
+    fn all_ten_point_sets_keep_indexes_and_only_used_points_are_required() {
         let mut r = valid_recipe();
-        r.stations.butt.num_points = Some(10);
-        for (i, p) in r.stations.butt.points.iter_mut().enumerate() {
-            *p = Point {
+        for station in [&mut r.stations.butt, &mut r.stations.tip] {
+            station.num_points = Some(10);
+            station.points = std::array::from_fn(|i| Point {
                 pos_linear: Some(i as f64),
                 pos_press_fixed: Some(i as f64 + 10.0),
                 pos_force: Some(i as f64 + 20.0),
                 load: Some(i as f64 + 30.0),
                 bend: Some(i as f64 + 40.0),
-            };
+            });
         }
-        assert!(r.validate_and_normalize().is_ok());
-        assert_eq!(r.stations.butt.points[9].pos_force, Some(29.0));
-        r.stations.butt.num_points = Some(1);
-        assert!(r.validate_and_normalize().is_ok());
-        assert_eq!(r.stations.butt.points[0].load, Some(30.0));
-        assert!(
-            r.stations.butt.points[1..]
-                .iter()
-                .all(|p| *p == Point::default())
-        );
+        let original = r.stations.clone();
+        r.validate_and_normalize().unwrap();
+        assert_eq!(r.stations, original);
+        assert_eq!(r.stations.tip.points[9].pos_force, Some(29.0));
+        r.stations.butt.points[9].load = None;
+        assert!(r.validate_and_normalize().is_err());
+        r.stations.butt.num_points = Some(9);
+        r.validate_and_normalize().unwrap();
+        assert_eq!(r.stations.butt.points[9].bend, Some(49.0));
+        r.stations.butt.num_points = Some(10);
+        assert!(r.validate_and_normalize().is_err());
     }
 
     #[test]

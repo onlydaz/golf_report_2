@@ -101,6 +101,7 @@ export interface AppInfo {
 
 export interface PointSummary {
   station: string; pointNo: number; positionMin: number | null; positionMax: number | null;
+  /** loadG: configured load in g; pushDistMm: mean actual load in kg (legacy name). */
   loadG: number | null; pushDistMm: number | null; bendMm: number | null;
   samples: number; points: number; ok: number; ng: number;
 }
@@ -125,6 +126,7 @@ export interface ExportPoint {
 }
 export interface ExportAttempt {
   stickId: number; productCode: string; stickNo: number; station: string; pointNo: number;
+  /** pushDistMm is raw actual load in kg for the current PLC; legacy name, no scaling. */
   attemptNo: number; pushDistMm: number | null; bendMm: number | null;
 }
 export interface ExportBatch {

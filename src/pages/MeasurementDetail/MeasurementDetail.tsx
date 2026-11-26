@@ -21,7 +21,7 @@ function Attempts({ point }: { point: Point }) {
   const columns: ColumnsType<AttemptRow> = [
     { title: "Lượt đo", dataIndex: "n", width: 120 },
     { title: "Góc đo", render: (_, a) => `${(a.n - 1) * 90}°`, width: 120 },
-    { title: "Khoảng cách đẩy (mm)", dataIndex: "pushDist", render: (v) => fmtNum(v, 2), width: 220 },
+    { title: "Lực đè thực tế (kg)", dataIndex: "pushDist", render: (v) => fmtNum(v, 2), width: 220 },
     { title: "Độ cong (mm)", dataIndex: "bend", render: (v) => fmtNum(v), width: 180 },
     { title: "Lượt quyết định", render: (_, a) => a.n === point.decideAttempt ? <Tag color="blue">Quyết định</Tag> : "—", width: 180 },
   ];
@@ -40,12 +40,12 @@ function StationCard({ record, station }: { record: StickRecord; station: Statio
     { title: "Số lượt đo", render: (_, p) => attemptCount(p), width: 115 },
     { title: "Lượt quyết định", render: (_, p) => decidingAttempt(p) ? p.decideAttempt : "—", width: 150 },
     { title: "Số lần đo lại", render: (_, p) => Math.max(0, attemptCount(p) - 1), width: 130 },
-    { title: "Khoảng cách đẩy quyết định (mm)", render: (_, p) => fmtNum(decidingAttempt(p)?.pushDist, 2), width: 260 },
+    { title: "Lực đè thực tế lượt quyết định (kg)", render: (_, p) => fmtNum(decidingAttempt(p)?.pushDist, 2), width: 260 },
     { title: "Độ cong quyết định (mm)", render: (_, p) => fmtNum(decidingAttempt(p)?.bend), width: 210 },
   ];
   return <Card className="section-card measurement-station" title={`Trạm ${station}`}>
     <dl className="measurement-station-summary">
-      <div><dt>Lực đè</dt><dd>{fmtKg(s.load)} kg</dd></div>
+      <div><dt>Lực đè cài đặt</dt><dd>{fmtKg(s.load)} kg</dd></div>
       <div><dt>Kết quả</dt><dd><ResultTag value={s.result} /></dd></div>
       <div><dt>Số điểm đo</dt><dd>{s.pointCount}</dd></div>
       <div><dt>Điểm NG</dt><dd>{s.ngPoint > 0 ? `P${s.ngPoint}` : "—"}</dd></div>

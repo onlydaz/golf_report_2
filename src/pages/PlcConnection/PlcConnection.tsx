@@ -10,6 +10,9 @@ import { useControl, useLive, usePlcDiagnostics } from "../../app/LiveProvider";
 import { fmtDateTime, fmtInt, fmtNum } from "../../lib/format";
 import "./PlcConnection.css";
 
+// Retain test controls in source, but keep them off the production page.
+const SHOW_PLC_TEST_CONTROLS = false;
+
 function elapsed(from: string | null | undefined, now: number) {
   if (!from) return "—";
   const seconds = Math.max(0, Math.floor((now - Date.parse(from)) / 1000));
@@ -38,7 +41,7 @@ export default function PlcConnection() {
     { label: "Độ trễ đọc", value: connected && d?.readLatencyMs != null ? `${fmtNum(d.readLatencyMs, 1)} ms` : "—", title: "Thời gian hoàn thành lượt đọc gần nhất qua Actor, gồm thời gian chờ hàng đợi" },
     { label: "DataReady", value: fmtInt(c?.dataReady) },
     { label: "PC_ReadDone", value: fmtInt(c?.pcReadDone) },
-    { label: "PC_ReadCount", value: <span className="plc-read-count">{fmtInt(c?.pcReadCount)}<ResetReadCountButton /></span> },
+    { label: "PC_ReadCount", value: <span className="plc-read-count">{fmtInt(c?.pcReadCount)}{SHOW_PLC_TEST_CONTROLS && <ResetReadCountButton />}</span> },
     { label: "Lỗi đọc hôm nay", value: d ? fmtInt(today ? d.readErrorsToday : 0) : "—", title: "Số lượt đọc thất bại hôm nay trong phiên ứng dụng hiện tại" },
     { label: "Mất kết nối hôm nay", value: d ? fmtInt(today ? d.disconnectsToday : 0) : "—", title: "Số lần mất kết nối sau khi đã kết nối thành công, hôm nay trong phiên ứng dụng hiện tại" },
     { label: "TotalCount", value: fmtInt(c?.totalCount) },
@@ -67,7 +70,7 @@ export default function PlcConnection() {
           <label className="filter-field"><span>Unit ID</span><Input aria-label="Unit ID" readOnly value={d?.unitId ?? "—"} /></label>
         </div>
       </Card>
-      <ControlAreaPanel />
+      {SHOW_PLC_TEST_CONTROLS && <ControlAreaPanel />}
       </div>
       <div className="plc-connection-right">
         <Card className="section-card" title="Trạng thái kết nối" extra={<Tag color={connected ? "green" : status?.state === "disconnected" ? "red" : "gold"}>

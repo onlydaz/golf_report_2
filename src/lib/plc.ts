@@ -88,7 +88,7 @@ export function onPollError(cb: (e: PlcError) => void): Promise<UnlistenFn> {
 }
 
 export interface Attempt {
-  /** mm */ pushDist: number;
+  /** Actual applied load in kg, confirmed for the current PLC; legacy PushDist name. */ pushDist: number;
   /** mm */ bend: number;
 }
 
@@ -106,7 +106,7 @@ export interface Station {
   result: number;
   pointCount: number;
   ngPoint: number;
-  /** g */ load: number;
+  /** Configured load in g; divide by 1000 for display in kg. */ load: number;
   points: Point[];
 }
 

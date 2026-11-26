@@ -12,7 +12,6 @@
 .recipe-page .ant-input-number-input { text-align: center; font-variant-numeric: tabular-nums; }
 .recipe-points .ant-table-thead > tr > th { text-align: center; background: var(--c-surface-muted); }
 .recipe-points .ant-table-cell { padding: 10px !important; }
-.recipe-points small { display: block; font-size: 10px; color: var(--c-navy-400); }
 .recipe-point-unused { opacity: .5; background: var(--c-surface-muted); }
 .recipe-help { margin: 0; font-size: 13px; line-height: 1.6; }
 .recipe-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px; background: white; border: 1px solid var(--c-border); border-radius: 12px; }

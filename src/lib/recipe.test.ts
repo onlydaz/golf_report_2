@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { changeStation, confirmedRecipeHandshake, emptyPoint, matchActiveRecipe, recipeLoadsKg,
+import { confirmedRecipeHandshake, emptyPoint, matchActiveRecipe, recipeLoadsKg,
   recipeErrors, recipeApplyBlockReason, transferFailure, recipeApi } from "./recipe";
 import type { Recipe, RecipeStation, RecipePlcStatus } from "./recipe";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
@@ -8,38 +8,47 @@ const unset = (): RecipeStation => ({ enabled: null, numPoints: null, maxRot: nu
   settleTime: null, loadTol: null, bendTol: null, points: Array.from({ length: 10 }, emptyPoint) });
 const valid = (): Recipe => ({ id: 1, customer: "TM", sku: "MH1253R", recipeRev: 0,
   updatedAt: "2026-01-01T00:00:00Z", configured: false, stations: {
-    butt: { ...unset(), enabled: 1, numPoints: 1, maxRot: 0, settleTime: 0, loadTol: 0, bendTol: 0,
-      points: Array.from({ length: 10 }, (_, i) => i ? emptyPoint() : {
+    butt: { ...unset(), enabled: 1, numPoints: 4, maxRot: 0, settleTime: 0, loadTol: 0, bendTol: 0,
+      points: Array.from({ length: 10 }, (_, i) => i >= 4 ? emptyPoint() : {
         posLinear: 0, posPressFixed: -1, posForce: 0, load: 100, bend: 1,
-      }) }, tip: { ...unset(), enabled: 0 },
+      }) }, tip: { ...unset(), enabled: 1, numPoints: 1, maxRot: 0, settleTime: 0, loadTol: 0, bendTol: 0,
+      points: Array.from({ length: 10 }, (_, i) => i ? emptyPoint() : {
+        posLinear: 0, posPressFixed: 0, posForce: 0, load: 100, bend: 1,
+      }) },
   } });
 
 describe("recipe validation and editing", () => {
-  it("distinguishes missing configuration from valid zero and disabled stations", () => {
-    const recipe = valid();
-    expect(recipeErrors(recipe)).toEqual([]);
-    recipe.stations.butt.maxRot = null;
-    expect(recipeErrors(recipe)).toContain("BUTT: số lần xoay tối đa phải từ 0 đến 3.");
-    recipe.stations.butt = unset();
-    expect(recipeErrors(recipe)).toContain("BUTT: chọn sử dụng hoặc bỏ qua trạm.");
-    recipe.stations.butt.enabled = 0;
-    expect(recipeErrors(recipe)).toEqual([]);
+  it("requires explicit Enable and used parameters without filling defaults", () => {
+    const r = valid();
+    expect(recipeErrors(r)).toEqual([]);
+    r.stations.butt = unset();
+    const original = JSON.stringify(r);
+    expect(recipeErrors(r).length).toBeGreaterThan(0);
+    expect(JSON.stringify(r)).toBe(original);
+    r.stations.butt.enabled = 0;
+    expect(recipeErrors(r)).toEqual([]);
+    r.stations.butt.enabled = 2;
+    expect(recipeErrors(r).length).toBeGreaterThan(0);
   });
 
-  it("preserves all five values by index and does not resurrect unused values", () => {
-    const s = valid().stations.butt;
-    s.numPoints = 10;
-    s.points = Array.from({ length: 10 }, (_, i) => ({ posLinear: i, posPressFixed: i + 10,
-      posForce: i + 20, load: i + 30, bend: i + 40 }));
-    const shortened = changeStation(s, { numPoints: 2 });
-    expect(shortened.points[1]).toEqual(s.points[1]);
-    expect(shortened.points.slice(2)).toEqual(Array.from({ length: 8 }, emptyPoint));
-    const expanded = changeStation(shortened, { numPoints: 10 });
-    expect(expanded.points[9]).toEqual(emptyPoint());
-    expect(s.points[9].bend).toBe(49); // Immutable edit preserves the saved snapshot.
-    const disabled = changeStation(s, { enabled: 0 });
-    expect(disabled).toEqual({ ...unset(), enabled: 0 });
-    expect(changeStation(disabled, { enabled: 1 }).points.every(p => p.load === null)).toBe(true);
+  it("supports all ten indexes and preserves unused values when changing NumPoints or Enable", () => {
+    const r = valid();
+    for (const name of ["butt", "tip"] as const) {
+      r.stations[name].numPoints = 10;
+      r.stations[name].points = Array.from({ length: 10 }, (_, i) => ({ posLinear: i,
+        posPressFixed: i + 10, posForce: i + 20, load: i + 30, bend: i + 40 }));
+    }
+    const original = JSON.stringify(r);
+    expect(recipeErrors(r)).toEqual([]);
+    expect(JSON.stringify(r)).toBe(original);
+    r.stations.butt.points[9].load = null;
+    expect(recipeErrors(r).length).toBeGreaterThan(0);
+    r.stations.butt.numPoints = 9;
+    expect(recipeErrors(r)).toEqual([]);
+    expect(r.stations.butt.points[9].bend).toBe(49);
+    r.stations.butt.enabled = 0;
+    expect(recipeErrors(r)).toEqual([]);
+    expect(r.stations.butt.points[9].bend).toBe(49);
   });
 
   it("requires positive load/bend and finite REAL values without inventing travel limits", () => {
@@ -69,7 +78,7 @@ describe("recipe validation and editing", () => {
       const r = valid(); r.sku = sku;
       expect(recipeErrors(r).length).toBeGreaterThan(0);
     }
-    const r = valid(); r.stations.tip.enabled = 1;
+    const r = valid(); r.stations.tip.maxRot = null;
     expect(recipeErrors(r).some(e => e.startsWith("TIP:"))).toBe(true);
   });
 });
@@ -116,7 +125,7 @@ describe("recipe PLC transfer", () => {
     expect(recipeLoadsKg()).toEqual([]);
     s.points[1].load = null;
     expect(recipeLoadsKg(s)).toEqual([]);
-    expect(recipeLoadsKg(valid().stations.tip)).toEqual([]);
+    expect(recipeLoadsKg(valid().stations.tip)).toEqual([0.1]);
   });
 
   it("gates apply on saved data, connections, commissioning and a ready handshake", () => {
@@ -139,16 +148,21 @@ describe("recipe PLC transfer", () => {
     expect(recipeApplyBlockReason(incomplete, false, true, true, false, status())).not.toBeNull();
   });
 
-  it("retains ten-point editing but blocks transfer beyond current result capacity", () => {
-    for (const [station, allowed] of [["butt", 4], ["tip", 1]] as const) {
-      const r = saved();
-      r.stations[station] = { ...r.stations.butt, numPoints: allowed,
-        points: Array.from({ length: 10 }, () => ({ ...r.stations.butt.points[0] })) };
-      expect(recipeApplyBlockReason(r, false, true, true, false, status())).toBeNull();
-      r.stations[station].numPoints = allowed + 1;
-      expect(recipeErrors(r)).toEqual([]);
-      expect(recipeApplyBlockReason(r, false, true, true, false, status())).toContain("4 điểm BUTT hoặc 1 điểm TIP");
+  it("allows 1-4 points on either station but blocks applying valid 5-10 point recipes", () => {
+    for (const station of ["butt", "tip"] as const) {
+      for (const count of [1, 2, 3, 4, 5, 10]) {
+        const r = saved();
+        r.stations[station] = { ...r.stations.butt, enabled: 1, numPoints: count,
+          points: Array.from({ length: 10 }, () => ({ ...r.stations.butt.points[0] })) };
+        expect(recipeErrors(r)).toEqual([]);
+        const blocked = recipeApplyBlockReason(r, false, true, true, false, status());
+        if (count <= 4) expect(blocked).toBeNull();
+        else expect(blocked).toContain("mapping");
+      }
     }
+    const r = saved();
+    r.stations.tip = { ...unset(), enabled: 0, numPoints: 10 };
+    expect(recipeApplyBlockReason(r, false, true, true, false, status())).toBeNull();
   });
 
   it("distinguishes definite rejection from missing IPC evidence", () => {

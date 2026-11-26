@@ -19,8 +19,8 @@ interface Row {
 const columns: ColumnsType<Row> = [
   { title: "Trạm / Điểm", dataIndex: "label" },
   { title: <>Vị trí<br />(mm)</>, dataIndex: "position", width: "13%", align: "center", render: (v) => fmtNum(v) },
-  { title: <>Lực đè<br />(kg)</>, dataIndex: "loadG", width: "13%", align: "center", render: (v) => fmtKg(v) },
-  { title: <>Khoảng cách<br />đẩy (mm)</>, dataIndex: "pushDist", width: "19%", align: "center", render: (v) => fmtNum(v) },
+  { title: <>Lực đè cài<br />đặt (kg)</>, dataIndex: "loadG", width: "13%", align: "center", render: (v) => fmtKg(v) },
+  { title: <>Lực đè thực<br />tế (kg)</>, dataIndex: "pushDist", width: "19%", align: "center", render: (v) => fmtNum(v) },
   { title: <>Độ cong<br />(mm)</>, dataIndex: "bend", width: "14%", align: "center", render: (v) => fmtNum(v) },
   { title: <>Số<br />lần đo</>, dataIndex: "attempts", align: "center", width: 54 },
   { title: "Kết quả", dataIndex: "result", width: "13%", align: "center", render: (v) => <ResultTag value={v} /> },

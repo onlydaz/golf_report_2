@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import BendChart, { bendScale, chartRowsForSku } from "./BendChart";
-import type { StickRow } from "../lib/db";
-import { emptyPoint, type Recipe } from "../lib/recipe";
+import BendChart, { bendScale } from "./BendChart";
+import type { StationSettings, StickRow } from "../lib/db";
+import type { StickRecord } from "../lib/plc";
 import { fmtKg, fmtNum } from "../lib/format";
+
+const latest = (): StickRecord => {
+  const point = { result: 1, attemptCount: 2, decideAttempt: 2, position: 100,
+    attempts: [{ pushDist: 999, bend: 500 }, { pushDist: 3.756, bend: 10 }] };
+  return { version: 1, stickNo: 42, productCode: "OTHER-SKU", recordSeq: 42, overallResult: 1,
+    status: { raw: 0, valid: true, buttChecked: true, tipChecked: true, overallOk: true }, raw: [],
+    butt: { result: 1, pointCount: 2, ngPoint: 0, load: 2500,
+      points: [structuredClone(point), structuredClone(point)] },
+    tip: { result: 1, pointCount: 1, ngPoint: 0, load: 1500, points: [structuredClone(point)] } };
+};
+const reference: StationSettings = { loadKg: 999, pushDistMm: 999, positionsMm: [0, 125.5, 250, 375],
+  bendMinMm: 50, bendMaxMm: 200 };
+const render = (latestRecord?: StickRecord, rows: StickRow[] = [], station = reference) =>
+  renderToStaticMarkup(createElement(BendChart, { rows, loading: false, latestRecord,
+    settings: { butt: station, tip: station } }));
 
 describe("bend scale and displayed measurements", () => {
   it("keeps negative measurements and both configured limits visible", () => {
@@ -25,54 +40,55 @@ describe("bend scale and displayed measurements", () => {
   });
 });
 
-describe("active recipe chart", () => {
-  const recipe = (): Recipe => ({ id: 1, customer: "TM", sku: "MH1253R", recipeRev: 7,
-    configured: true, updatedAt: "2026-11-26T00:00:00Z", stations: {
-      butt: { enabled: 1, numPoints: 2, maxRot: 0, settleTime: 1, loadTol: 0, bendTol: 0,
-        points: Array.from({ length: 10 }, () => ({ ...emptyPoint(), load: 2500 })) },
-      tip: { enabled: 0, numPoints: null, maxRot: null, settleTime: null, loadTol: null, bendTol: null,
-        points: Array.from({ length: 10 }, emptyPoint) },
-    } });
-  const render = (r?: Recipe, note?: string) => renderToStaticMarkup(createElement(BendChart,
-    { rows: [], loading: false, sku: "MH1253R", recipe: r, recipeNote: note }));
+describe("measurement chart without recipe dependencies", () => {
+  it("uses configured grams and deciding actual kg from the latest measurement", () => {
+    const r = latest();
+    const before = JSON.stringify(r);
+    const html = render(r);
+    expect(html).toContain("Lực đè cài đặt (kg)");
+    expect(html).toContain("Lực đè thực tế (kg)");
+    expect(html).toContain("<b>2,50</b>");
+    expect(html).toContain("<b>3,76</b>");
+    expect(html).not.toContain("999,00");
+    expect(html).not.toContain("Dung sai độ cong");
+    expect(html).not.toContain("Chưa đồng bộ công thức");
+    expect(JSON.stringify(r)).toBe(before);
+  });
 
-  it("filters exact active SKU before taking 30 and preserves stored bends and results", () => {
-    const rows: StickRow[] = Array.from({ length: 70 }, (_, i) => ({ id: 70 - i, stickNo: i, recordSeq: i,
-      productCode: i % 2 ? "MH1253R" : "MH1253R-OTHER", receivedAt: "2026-11-26T00:00:00Z",
+  it("shows the min-max of deciding values and ignores unmeasured points and invalid attempts", () => {
+    const r = latest();
+    r.butt.points[1].attempts[1].pushDist = 4.5;
+    expect(render(r)).toContain("<b>3,76–4,50</b>");
+    r.butt.pointCount = 1;
+    expect(render(r)).toContain("<b>3,76</b>");
+    r.butt.points[0].decideAttempt = 3;
+    expect(render(r)).not.toContain("3,76");
+    expect(render(r)).not.toContain("999,00");
+  });
+
+  it("uses config reference values without trailing zeroes and never uses its old push distance", () => {
+    const html = render(latest());
+    expect(html).toContain("<b>50–200</b>");
+    expect(html).toContain("<b>0 · 125,5 · 250 · 375</b>");
+    expect(html).toContain("Giới hạn tham chiếu từ config.toml");
+    expect(html).not.toContain("50,00–200,00");
+    expect(render(undefined, [], { ...reference, bendMinMm: 201 })).toContain("Chưa cấu hình");
+    expect(render(undefined, [], { ...reference, bendMinMm: 0, bendMaxMm: null })).toContain("≥ 0");
+    expect(render(undefined, [], { ...reference, bendMinMm: NaN })).toContain("≤ 200");
+  });
+
+  it("renders stored bends from different SKUs with no live identity or measurement", () => {
+    const rows: StickRow[] = Array.from({ length: 30 }, (_, i) => ({ id: 30 - i, stickNo: i, recordSeq: i,
+      productCode: i % 2 ? "SKU-A" : "SKU-B", receivedAt: "2026-11-26T00:00:00Z",
       buttBends: [-5, 200, null, 150], tipBends: [4], buttResult: 1, tipResult: 2, overallResult: 2,
       buttLoadG: 2500, tipLoadG: 3000 }));
     const before = JSON.stringify(rows);
-    const selected = chartRowsForSku(rows, "MH1253R");
-    expect(selected).toHaveLength(30);
-    expect(selected[0]).toBe(rows[1]);
-    expect(selected[29]).toBe(rows[59]);
-    expect(selected.every(r => r.productCode === "MH1253R")).toBe(true);
-    expect(chartRowsForSku(rows)).toEqual([]);
-    expect(chartRowsForSku(rows, "UNKNOWN")).toEqual([]);
+    const html = render(undefined, rows);
+    expect(html).toContain('class="bend-chart"');
+    expect(html).not.toContain('class="bend-empty"');
+    expect(html).not.toContain("Chưa xác định SKU");
+    expect(html).not.toContain("Chưa đồng bộ công thức");
     expect(JSON.stringify(rows)).toBe(before);
-  });
-
-  it("shows recipe metrics, valid zero values and uniform or varying loads in kg", () => {
-    const r = recipe();
-    const uniform = render(r);
-    for (const label of ["Số điểm đo", "Lực đè cài đặt (kg)", "Dung sai độ cong (mm)", "Số lần xoay tối đa"]) {
-      expect(uniform).toContain(label);
-    }
-    expect(uniform).toContain("2,500");
-    expect(uniform).toContain("<b>0,00</b>");
-    expect(uniform).toContain("<b>0</b>");
-    r.stations.butt.points[1].load = 3500;
-    expect(render(r)).toContain("2,500–3,500");
-    r.stations.butt.enabled = 0;
-    expect(render(r)).toContain("Trạm BUTT không sử dụng");
-    expect(render(r)).not.toContain("2,500");
-  });
-
-  it("shows unsynchronized state without replacement parameters or limit warnings", () => {
-    const html = render(undefined, "Chưa đồng bộ công thức");
-    expect(html).toContain("Chưa đồng bộ công thức");
-    expect(html).not.toContain("Vượt giới hạn");
-    expect(html).not.toContain("Giới hạn độ cong");
-    expect(html).not.toContain("Khoảng cách đẩy");
+    expect(render()).toContain("Chưa có dữ liệu độ cong đã lưu cho trạm BUTT");
   });
 });

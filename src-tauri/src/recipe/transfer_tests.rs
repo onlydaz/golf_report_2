@@ -323,6 +323,16 @@ async fn preconditions_revision_validation_and_capacity_never_write() {
     for recipe in [
         {
             let mut r = saved_recipe();
+            r.stations.butt.num_points = Some(0);
+            r
+        },
+        {
+            let mut r = saved_recipe();
+            r.stations.tip.enabled = Some(2);
+            r
+        },
+        {
+            let mut r = saved_recipe();
             r.summary.configured = false;
             r
         },
@@ -336,7 +346,7 @@ async fn preconditions_revision_validation_and_capacity_never_write() {
         {
             let mut r = saved_recipe();
             r.stations.tip = r.stations.butt.clone();
-            r.stations.tip.num_points = Some(2);
+            r.stations.tip.num_points = Some(5);
             r.stations.tip.points = std::array::from_fn(|_| r.stations.butt.points[0].clone());
             assert!(encode::encode(&r).is_ok());
             r
@@ -370,6 +380,36 @@ async fn preconditions_revision_validation_and_capacity_never_write() {
         h.machine.lock().unwrap().regs[addr] = if addr == 20002 { 1 } else { 0 };
     }
     assert!(h.machine.lock().unwrap().writes.is_empty());
+}
+
+#[tokio::test]
+async fn variable_counts_through_four_per_station_and_disabled_stations_can_transfer() {
+    let h = harness(Machine::default()).await;
+    let t = transfer();
+    for (butt_count, tip_count) in [(1, 1), (2, 3), (4, 4)] {
+        let mut r = saved_recipe();
+        r.stations.butt.num_points = Some(butt_count);
+        r.stations.tip = r.stations.butt.clone();
+        r.stations.tip.num_points = Some(tip_count);
+        let rev = r.summary.recipe_rev;
+        assert_eq!(
+            t.apply(&h.plc, rev, async { Ok(r) }).await.unwrap().outcome,
+            Outcome::Success
+        );
+    }
+    let mut r = saved_recipe();
+    r.stations.tip.enabled = Some(0);
+    r.stations.tip.num_points = Some(10);
+    let rev = r.summary.recipe_rev;
+    assert_eq!(
+        t.apply(&h.plc, rev, async { Ok(r) }).await.unwrap().outcome,
+        Outcome::Success
+    );
+    assert!(
+        h.machine.lock().unwrap().regs[20156..20276]
+            .iter()
+            .all(|&v| v == 0)
+    );
 }
 
 #[tokio::test]

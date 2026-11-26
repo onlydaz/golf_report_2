@@ -9,7 +9,7 @@ use super::registers::record::{self as reg, attempt, point, station, status};
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attempt {
-    /// mm
+    /// Actual applied load in kg (confirmed for the current PLC); legacy PushDist name.
     pub push_dist: f32,
     /// mm
     pub bend: f32,
@@ -34,7 +34,7 @@ pub struct Station {
     pub result: i16,
     pub point_count: i16,
     pub ng_point: i16,
-    /// g
+    /// Configured load in g; converted to kg only for display.
     pub load: f32,
     pub points: Vec<Point>,
 }

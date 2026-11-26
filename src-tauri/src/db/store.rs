@@ -71,6 +71,8 @@ async fn insert_station(
         .execute(&mut **tx)
         .await?;
 
+        // Legacy push_dist_mm column stores PushDist unchanged: actual applied load in kg
+        // for the current PLC. Do not rescale historical data or infer units from the column name.
         for (a_no, a) in (1i16..).zip(p.attempts.iter().take(measured(p.attempt_count))) {
             sqlx::query(
                 "INSERT INTO attempt (stick_id, station, point_no, attempt_no, push_dist_mm, bend_mm) \

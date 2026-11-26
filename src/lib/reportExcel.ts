@@ -62,6 +62,7 @@ export function appendExportBatch(book: ExcelJS.Workbook, batch: ExportBatch) {
   batch.points.forEach((p) => addRow(points, [p.stickId, p.productCode, p.stickNo, p.station, p.pointNo,
     numeric(p.positionMm), resultLabel(p.result), p.attemptCount, p.decideAttempt], [6], [7]));
   const attemptStart = attempts.rowCount + 1;
+  // Legacy pushDistMm contains actual load in kg from the current PLC: export unchanged.
   batch.attempts.forEach((a) => addRow(attempts, [a.stickId, a.productCode, a.stickNo, a.station, a.pointNo,
     a.attemptNo, numeric(a.pushDistMm), numeric(a.bendMm)], [7, 8], []));
   mergeGroups(points, batch.points, pointStart, (r) => String(r.stickId), [1, 2, 3]);
@@ -76,9 +77,9 @@ export function createReportWorkbook() {
   const book = new ExcelJS.Workbook();
   book.creator = "Phần Mềm Thu Thập Dữ Liệu Độ Cong Gậy Golf";
   book.created = new Date();
-  sheet(book, "Tổng hợp", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Thời gian nhận", "RecordSeq", "Kết quả tổng thể", "Kết quả BUTT", "Lực đè BUTT (kg)", "Kết quả TIP", "Lực đè TIP (kg)"]);
+  sheet(book, "Tổng hợp", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Thời gian nhận", "RecordSeq", "Kết quả tổng thể", "Kết quả BUTT", "Lực đè cài đặt BUTT (kg)", "Kết quả TIP", "Lực đè cài đặt TIP (kg)"]);
   sheet(book, "Điểm đo", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Trạm đo", "Điểm đo", "Vị trí đo (mm)", "Kết quả", "Số lượt đo", "Lượt quyết định"]);
-  sheet(book, "Lượt đo", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Trạm đo", "Điểm đo", "Lượt đo", "Khoảng cách đẩy (mm)", "Độ cong (mm)"]);
+  sheet(book, "Lượt đo", ["Mã phép đo", "Mã sản phẩm", "Số gậy", "Trạm đo", "Điểm đo", "Lượt đo", "Lực đè thực tế (kg)", "Độ cong (mm)"]);
   for (const s of book.worksheets.slice(1)) s.getCell("A1").note = "Các dòng được gộp theo mã phép đo, trạm và điểm. Dùng sheet Tổng hợp để lọc/sắp xếp.";
   return book;
 }

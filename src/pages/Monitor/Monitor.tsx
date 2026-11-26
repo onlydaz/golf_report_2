@@ -115,7 +115,7 @@ function CurrentStick({
         <h2>Gậy vừa kiểm tra · {r ? `#${r.stickNo}` : "Chưa có dữ liệu"}</h2>
         {r && (
           <span>
-            {fmtTime(current.receivedAt)} · RecordSeq {r.recordSeq} · Lực đè BUTT {fmtKg(r.butt.load)} kg / TIP{" "}
+            {fmtTime(current.receivedAt)} · Lực đè cài đặt BUTT {fmtKg(r.butt.load)} kg / TIP{" "}
             {fmtKg(r.tip.load)} kg
           </span>
         )}
@@ -203,9 +203,10 @@ export default function Monitor() {
 
   const stats = useQuery(connected && !!info, () => db.stats({ from: info!.startedAt }), [info, savedTick, refresh]);
   const recent = useQuery(connected, () => db.list({}, recentPage, RECENT_PAGE_SIZE), [recentPage, savedTick, refresh]);
+  const chart = useQuery(connected, () => db.list({}, 1, CHART_SIZE), [savedTick, refresh]);
 
   // Newest saved stick, shown until the PLC sends a record in this run.
-  const newestId = recentPage === 1 ? recent.data?.items[0]?.id : undefined;
+  const newestId = chart.data?.items[0]?.id;
   const newest = useQuery(connected && !last && newestId != null, () => db.detail(newestId!), [newestId]);
   const current = last
     ? last
@@ -214,7 +215,6 @@ export default function Monitor() {
       : undefined;
 
   const sku = active.confirmed?.handshake.actSku || undefined;
-  const chart = useQuery(connected && !!sku, () => db.list({ productCode: sku }, 1, CHART_SIZE), [sku, savedTick, refresh], false);
   const error = stats.error || recent.error || chart.error || newest.error;
 
   return (
@@ -249,10 +249,7 @@ export default function Monitor() {
             )
           }
         />
-        <BendChart rows={chart.data?.items ?? []} loading={chart.loading} sku={sku}
-          recipe={active.recipe} recipeNote={!active.recipe ? "Chưa đồng bộ công thức"
-            : !active.isLive ? "Thông số theo trạng thái PLC xác nhận gần nhất, chưa có xác nhận trực tiếp mới." : undefined}
-          recipeError={active.recipeError} />
+        <BendChart rows={chart.data?.items ?? []} loading={chart.loading} latestRecord={current?.record} settings={info?.measurement} />
       </section>
 
       <RecentTable

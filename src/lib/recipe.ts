@@ -90,9 +90,8 @@ export function recipeApplyBlockReason(recipe: Recipe | undefined, dirty: boolea
   if (!recipe?.configured || recipe.recipeRev <= 0) return "Công thức chưa được thiết lập và lưu.";
   if (dirty) return "Cần lưu các thay đổi trước khi nạp PLC.";
   if (recipeErrors(recipe).length) return "Công thức đã lưu chưa hợp lệ.";
-  if (recipe.stations.butt.enabled === 1 && (recipe.stations.butt.numPoints ?? 0) > 4
-    || recipe.stations.tip.enabled === 1 && (recipe.stations.tip.numPoints ?? 0) > 1) {
-    return "Chưa cho phép nạp quá 4 điểm BUTT hoặc 1 điểm TIP theo mapping kết quả hiện tại.";
+  if (Object.values(recipe.stations).some(s => s.enabled === 1 && (s.numPoints ?? 0) > 4)) {
+    return "Chưa cho phép nạp quá 4 điểm mỗi trạm theo mapping kết quả đo hiện tại; cần kỹ thuật viên xác nhận mapping tương ứng.";
   }
   if (status.needsReconcile) return "Cần đối chiếu handshake trước khi nạp tiếp.";
   if (status.readError || !status.handshake) return status.readError ?? "Chưa đọc được trạng thái PLC.";
@@ -116,17 +115,6 @@ export const emptyPoint = (): RecipePoint => ({
   posLinear: null, posPressFixed: null, posForce: null, load: null, bend: null,
 });
 
-/** Clear unused points immediately so expanding the count cannot revive old values. */
-export function changeStation(station: RecipeStation, patch: Partial<RecipeStation>): RecipeStation {
-  const next = { ...station, ...patch };
-  if (next.enabled === 0) {
-    return { enabled: 0, numPoints: null, maxRot: null, settleTime: null,
-      loadTol: null, bendTol: null, points: Array.from({ length: 10 }, emptyPoint) };
-  }
-  return { ...next, points: next.points.map((point, i) =>
-    next.enabled === 1 && i < (next.numPoints ?? 0) ? point : emptyPoint()) };
-}
-
 const real = (value: number | null) => value !== null && Number.isFinite(value) && Number.isFinite(Math.fround(value));
 const integer = (value: number | null, min: number, max: number) =>
   value !== null && Number.isInteger(value) && value >= min && value <= max;
@@ -143,7 +131,7 @@ export function recipeErrors(recipe: Recipe): string[] {
     if (s.points.length !== 10) errors.push(`${label}: phải có đúng 10 hàng điểm.`);
     const values = [s.loadTol, s.bendTol, ...s.points.flatMap(p => Object.values(p))];
     if (values.some(v => v !== null && !real(v))) errors.push(`${label}: thông số phải là số hữu hạn REAL 32 bit.`);
-    if (s.enabled === 0) continue; // Excel explicitly skips a disabled station.
+    if (s.enabled === 0) continue; // Disabled station: preserve values without requiring parameters.
     if (s.enabled !== 1) { errors.push(`${label}: chọn sử dụng hoặc bỏ qua trạm.`); continue; }
     if (!integer(s.numPoints, 1, 10)) errors.push(`${label}: số điểm đo phải từ 1 đến 10.`);
     if (!integer(s.maxRot, 0, 3)) errors.push(`${label}: số lần xoay tối đa phải từ 0 đến 3.`);

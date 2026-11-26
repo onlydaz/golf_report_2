@@ -1,11 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Card, Empty, Select, Spin, Tooltip as InfoTooltip } from "antd";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { StickRow } from "../lib/db";
-import { fmtDateTime, fmtNum } from "../lib/format";
-import { recipeLoadsKg, type Recipe } from "../lib/recipe";
-import { pointColors } from "../theme/tokens";
-import type { StationKey } from "./stick";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { StationSettings, StickRow } from "../lib/db";
+import { fmtDateTime, fmtKg, fmtNum } from "../lib/format";
+import type { StickRecord } from "../lib/plc";
+import { colors, pointColors } from "../theme/tokens";
+import { decidingAttempt, measuredPoints, stationOf, type StationKey } from "./stick";
 import "./BendChart.css";
 
 const KEYS = ["p1", "p2", "p3", "p4"] as const;
@@ -25,65 +25,65 @@ export function bendScale(values: (number | null | undefined)[], limits: (number
 }
 type Datum = { id: number; stickNo: number; receivedAt: string } & Record<(typeof KEYS)[number], number | null>;
 
-export function chartRowsForSku(rows: StickRow[], sku?: string): StickRow[] {
-  return sku ? rows.filter(row => row.productCode === sku).slice(0, 30) : [];
-}
-
-function Dot(props: { cx?: number; cy?: number; value?: number | null; color: string; radius: number }) {
-  const { cx, cy, value, color, radius } = props;
+function Dot(props: { cx?: number; cy?: number; value?: number | null; color: string; radius: number; lower?: number; upper?: number }) {
+  const { cx, cy, value, color, radius, lower, upper } = props;
   if (cx == null || cy == null || !finite(value)) return <g />;
-  return <circle cx={cx} cy={cy} r={radius} fill={color} />;
+  const exceeded = (lower != null && value < lower) || (upper != null && value > upper);
+  return <circle cx={cx} cy={cy} r={exceeded ? radius + 1 : radius} fill={exceeded ? colors.limit : color} />;
 }
 
 /** Bend of the deciding attempt per point, for the given sticks (newest first, as queried). */
 export default function BendChart({
   rows,
   loading,
-  sku,
-  recipe,
-  recipeNote,
-  recipeError,
+  latestRecord,
+  settings,
 }: {
   rows: StickRow[];
   loading: boolean;
-  sku?: string;
-  recipe?: Recipe;
-  recipeNote?: string;
-  recipeError?: string;
+  latestRecord?: StickRecord;
+  settings?: { butt: StationSettings; tip: StationSettings };
 }) {
   const [station, setStation] = useState<StationKey>("BUTT");
-  const s = recipe?.stations[station === "BUTT" ? "butt" : "tip"];
-  const enabled = s?.enabled === 1;
-  const loads = recipeLoadsKg(s);
-  const uniformLoad = loads.length > 0 && loads.every(v => v === loads[0]);
-  const loadText = !loads.length ? "—" : uniformLoad ? fmtNum(loads[0], 3)
-    : `${fmtNum(Math.min(...loads), 3)}–${fmtNum(Math.max(...loads), 3)}`;
-  const matchingRows = useMemo(() => chartRowsForSku(rows, sku), [rows, sku]);
-  // Historical measurements determine which series exist, never the current recipe's point count.
-  const pointCount = station === "BUTT" ? 4 : matchingRows.reduce((n, r) =>
+  const s = latestRecord ? stationOf(latestRecord, station) : undefined;
+  const reference = settings?.[station === "BUTT" ? "butt" : "tip"];
+  const validOrder = !finite(reference?.bendMinMm) || !finite(reference?.bendMaxMm)
+    || reference.bendMinMm <= reference.bendMaxMm;
+  const lower = validOrder && finite(reference?.bendMinMm) ? reference.bendMinMm : undefined;
+  const upper = validOrder && finite(reference?.bendMaxMm) ? reference.bendMaxMm : undefined;
+  const referenceNum = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+  const limitText = lower != null && upper != null ? `${referenceNum(lower)}–${referenceNum(upper)}`
+    : lower != null ? `≥ ${referenceNum(lower)}` : upper != null ? `≤ ${referenceNum(upper)}` : "Chưa cấu hình";
+  // PushDist is already kg. Keep each point's deciding attempt; do not use config pushDistMm.
+  const loads = (s ? measuredPoints(s) : []).map((p, i) => ({ point: i + 1, value: decidingAttempt(p)?.pushDist }))
+    .filter((p): p is { point: number; value: number } => finite(p.value));
+  const uniformLoad = loads.length > 0 && loads.every(p => p.value === loads[0].value);
+  const loadText = !loads.length ? "—" : uniformLoad ? fmtNum(loads[0].value)
+    : `${fmtNum(Math.min(...loads.map(p => p.value)))}–${fmtNum(Math.max(...loads.map(p => p.value)))}`;
+  const recentRows = useMemo(() => rows.slice(0, 30), [rows]);
+  const pointCount = station === "BUTT" ? 4 : recentRows.reduce((n, r) =>
     Math.max(n, ...r.tipBends.map((v, i) => finite(v) ? i + 1 : 0)), 1);
   const data: Datum[] = useMemo(
     () =>
-      [...matchingRows].reverse().map((r) => {
+      [...recentRows].reverse().map((r) => {
         const b = (station === "BUTT" ? r.buttBends : r.tipBends).map((v) => finite(v) ? v : null);
         return { id: r.id, stickNo: r.stickNo, receivedAt: r.receivedAt, p1: b[0], p2: b[1], p3: b[2], p4: b[3] };
       }),
-    [matchingRows, station],
+    [recentRows, station],
   );
   const keys = KEYS.slice(0, pointCount);
   const dense = data.length > 15;
-  const hasData = !!sku && data.some((d) => keys.some((k) => finite(d[k])));
+  const hasData = data.some((d) => keys.some((k) => finite(d[k])));
   const scrollRef = useRef<HTMLDivElement>(null);
-  const lastScrolledRecord = useRef<string | undefined>(undefined);
+  const lastScrolledRecord = useRef<number | undefined>(undefined);
   const newestId = data[data.length - 1]?.id;
   useLayoutEffect(() => {
     if (!hasData || newestId == null || !scrollRef.current) return;
-    const recordKey = `${sku}:${newestId}`;
-    if (lastScrolledRecord.current === recordKey) return;
+    if (lastScrolledRecord.current === newestId) return;
     scrollRef.current.scrollLeft = scrollRef.current.scrollWidth - scrollRef.current.clientWidth;
-    lastScrolledRecord.current = recordKey;
-  }, [newestId, sku, hasData]);
-  const { domain, ticks } = bendScale(data.flatMap((d) => keys.map((k) => d[k])), []);
+    lastScrolledRecord.current = newestId;
+  }, [newestId, hasData]);
+  const { domain, ticks } = bendScale(data.flatMap((d) => keys.map((k) => d[k])), [lower, upper]);
 
   return (
     <Card
@@ -102,16 +102,19 @@ export default function BendChart({
       }
     >
       <div className="bend-settings">
-        <span>Số điểm đo<b>{enabled ? s.numPoints : "—"}</b></span>
-        <span>Lực đè cài đặt (kg)<InfoTooltip title={!uniformLoad && loads.length
-          ? loads.map((v, i) => <div key={i}>P{i + 1}: {fmtNum(v, 3)} kg</div>) : undefined}>
+        <span aria-label="Lực đè cài đặt (kg)"><span className="bend-setting-title">Lực đè cài đặt</span>
+          <span className="bend-setting-unit">(kg)</span><b>{fmtKg(s?.load)}</b></span>
+        <span aria-label="Lực đè thực tế (kg)"><span className="bend-setting-title">Lực đè thực tế</span>
+          <span className="bend-setting-unit">(kg)</span><InfoTooltip title={!uniformLoad && loads.length
+          ? loads.map(p => <div key={p.point}>P{p.point}: {fmtNum(p.value)} kg</div>) : undefined}>
           <b>{loadText}</b>
         </InfoTooltip></span>
-        <span>Dung sai độ cong (mm)<b>{enabled ? fmtNum(s.bendTol) : "—"}</b></span>
-        <span>Số lần xoay tối đa<b>{enabled ? s.maxRot : "—"}</b></span>
+        <span aria-label="Giới hạn độ cong (mm)" title="Giới hạn tham chiếu từ config.toml"><span className="bend-setting-title">Giới hạn độ cong</span>
+          <span className="bend-setting-unit">(mm)</span><b>{limitText}</b></span>
+        <span aria-label="Vị trí điểm đo (mm)" title="Vị trí tham chiếu từ config.toml"><span className="bend-setting-title">Vị trí điểm đo</span>
+          <span className="bend-setting-unit">(mm)</span><b>{reference?.positionsMm.length
+          ? reference.positionsMm.map(v => finite(v) ? referenceNum(v) : "—").join(" · ") : "Chưa cấu hình"}</b></span>
       </div>
-      {recipeNote && <div className="bend-note" title={recipeError}>{recipeNote}</div>}
-      {s?.enabled === 0 && <div className="bend-note">Trạm {station} không sử dụng trong công thức đang áp dụng.</div>}
       <div className="bend-legend">
         {keys.map((k, i) => (
           <span key={k}>
@@ -119,6 +122,9 @@ export default function BendChart({
             Điểm {i + 1}
           </span>
         ))}
+        <span title="Cảnh báo hiển thị theo giới hạn config.toml; không thay đổi kết quả OK/NG của PLC.">
+          <i className="bend-exceeded-dot" />Vượt giới hạn (NG)
+        </span>
       </div>
       <Spin spinning={loading}>
         {hasData ? (
@@ -141,6 +147,10 @@ export default function BendChart({
                   label={{ value: "Độ cong (mm)", angle: -90, position: "insideLeft", offset: 0,
                     dx: 4, style: { textAnchor: "middle" } }}
                 />
+                {lower != null && <ReferenceLine y={lower} stroke={colors.limit} strokeDasharray="5 4"
+                  label={{ value: `Giới hạn ${referenceNum(lower)}`, position: "insideBottomRight", fill: colors.limit, fontSize: 12 }} />}
+                {upper != null && <ReferenceLine y={upper} stroke={colors.limit} strokeDasharray="5 4"
+                  label={{ value: `Giới hạn ${referenceNum(upper)}`, position: "insideTopRight", fill: colors.limit, fontSize: 12 }} />}
                 <Tooltip
                   content={({ active, label }) => {
                     const d = data.find((x) => x.id === Number(label));
@@ -160,7 +170,7 @@ export default function BendChart({
                 />
                 {keys.map((k, i) => {
                   const dot = (p: { cx?: number; cy?: number; value?: number | null; index?: number }) => (
-                    <Dot key={`${k}-${p.index}`} {...p} color={pointColors[i]} radius={dense ? 3 : 4} />
+                    <Dot key={`${k}-${p.index}`} {...p} color={pointColors[i]} radius={dense ? 3 : 4} lower={lower} upper={upper} />
                   );
                   return (
                     <Line key={k} type="linear" dataKey={k} name={`Điểm ${i + 1}`} stroke={pointColors[i]} strokeWidth={2.5}
@@ -173,7 +183,7 @@ export default function BendChart({
           </div>
         ) : (
           <div className="bend-empty">
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={sku ? `Chưa có dữ liệu độ cong đã lưu cho trạm ${station}` : "Chưa xác định SKU đang hiển thị"} />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`Chưa có dữ liệu độ cong đã lưu cho trạm ${station}`} />
           </div>
         )}
       </Spin>

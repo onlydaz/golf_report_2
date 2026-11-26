@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import PageHeader from "../../components/PageHeader";
 import { useLive, useLiveRecipe } from "../../app/LiveProvider";
 import { errorText } from "../../lib/db";
-import { changeStation, recipeApi, recipeErrors, recipeApplyBlockReason, transferFailure } from "../../lib/recipe";
+import { recipeApi, recipeErrors, recipeApplyBlockReason, transferFailure } from "../../lib/recipe";
 import type { Recipe as RecipeData, RecipePoint, RecipeStation, RecipeSummary, StationName, RecipeTransferReport } from "../../lib/recipe";
 import "./Recipe.css";
 
@@ -14,7 +14,7 @@ const pointFields: { key: keyof RecipePoint; title: string }[] = [
   { key: "posLinear", title: "Vị trí tịnh tiến (mm)" },
   { key: "posPressFixed", title: "Vị trí đè cố định (mm)" },
   { key: "posForce", title: "Vị trí đo lực (mm)" },
-  { key: "load", title: "Lực đè (g)" },
+  { key: "load", title: "Lực đè cài đặt (g)" },
   { key: "bend", title: "Độ cong tham chiếu (mm)" },
 ];
 const commonFields: { key: "numPoints" | "maxRot" | "settleTime" | "loadTol" | "bendTol"; title: string; max?: number; min: number; integer?: boolean }[] = [
@@ -30,7 +30,7 @@ function StationEditor({ name, station, disabled, onChange }: {
   onChange: (station: RecipeStation) => void;
 }) {
   const active = station.enabled === 1;
-  const update = (patch: Partial<RecipeStation>) => onChange(changeStation(station, patch));
+  const update = (patch: Partial<RecipeStation>) => onChange({ ...station, ...patch });
   return <div className="recipe-station">
     <div className="recipe-settings">
       <label className="filter-field"><span>Sử dụng trạm</span>
@@ -40,19 +40,17 @@ function StationEditor({ name, station, disabled, onChange }: {
       </label>
       {commonFields.map(field => <label className="filter-field" key={field.key}><span>{field.title}</span>
         <InputNumber aria-label={`${name.toUpperCase()} · ${field.title}`} value={station[field.key]}
-          placeholder={field.key === "numPoints" ? (name === "butt" ? "4" : "1")
-            : field.key === "maxRot" ? "0 – 3" : "≥ 0"}
+          placeholder={field.key === "numPoints" ? "1 – 10" : field.key === "maxRot" ? "0 – 3" : "≥ 0"}
           disabled={disabled || !active} min={field.min} max={field.max}
           step={field.integer ? 1 : 0.1}
           onChange={value => update({ [field.key]: value })} />
       </label>)}
     </div>
-    {station.enabled === 0 && <Alert type="info" showIcon title="Trạm được bỏ qua. Các thông số và điểm đo của trạm này không được sử dụng." />}
     <Table className="recipe-points" size="small" pagination={false} scroll={{ x: 960 }}
       dataSource={station.points.map((point, index) => ({ ...point, index }))} rowKey="index"
       rowClassName={row => !active || row.index >= (station.numPoints ?? 0) ? "recipe-point-unused" : ""}
       columns={[
-        { title: "Điểm đo", key: "point", align: "center", width: 90, render: (_, row) => <span title={`Chỉ số ${row.index}`}>P{row.index + 1}<small>chỉ số {row.index}</small></span> },
+        { title: "Điểm đo", key: "point", align: "center", width: 90, render: (_, row) => <span title={`Index ${row.index}`}>P{row.index + 1}</span> },
         ...pointFields.map(field => ({ title: field.title, key: field.key, align: "center" as const,
           render: (_: unknown, row: RecipePoint & { index: number }) => <InputNumber
             aria-label={`${name.toUpperCase()} · P${row.index + 1} · ${field.title}`}
@@ -62,7 +60,7 @@ function StationEditor({ name, station, disabled, onChange }: {
               index === row.index ? { ...point, [field.key]: value } : point) })} />,
         })),
       ]} />
-    <p className="recipe-help">Mỗi hàng giữ đủ 5 thông số cùng điểm đo. Giảm số điểm hoặc bỏ qua trạm sẽ xóa các giá trị không sử dụng trong bản đang sửa. Để trống khác với giá trị 0.</p>
+    <p className="recipe-help">P1–P10 tương ứng index 0–9. Chỉ nhập điểm đang sử dụng; các điểm còn lại ghi 0 khi nạp PLC. Đổi số điểm hoặc bỏ qua trạm không xóa thông số đã nhập.</p>
   </div>;
 }
 

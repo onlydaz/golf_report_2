@@ -24,12 +24,16 @@ describe("V2 workbook", () => {
     expect(loaded.worksheets.map((w) => w.name)).toEqual(["Tổng hợp", "Điểm đo", "Lượt đo"]);
     expect([s.rowCount, p.rowCount, a.rowCount]).toEqual([3, 5, 9]);
     expect(s.getCell("H2").value).toBe(2.5);
+    expect(s.getCell("H1").value).toBe("Lực đè cài đặt BUTT (kg)");
+    expect(s.getCell("J1").value).toBe("Lực đè cài đặt TIP (kg)");
+    expect(s.getCell("H2").numFmt).toBe("0.00");
     expect(s.getCell("J2").value).toBeNull();
     expect(s.getCell("B2").value).toBe("=SKU");
     expect(s.getCell("B2").type).toBe(ExcelJS.ValueType.String);
     expect(p.getCell("F2").value).toBe(0);
     expect(p.getCell("E3").value).toBe(4);
     expect(a.getCell("G2").value).toBe(10.123456789);
+    expect(a.getCell("G1").value).toBe("Lực đè thực tế (kg)");
     expect(a.getCell("H3").value).toBe(-0.25);
     expect(a.getCell("G2").numFmt).toBe("0.00");
     expect(s.getRow(1).height).toBe(32);

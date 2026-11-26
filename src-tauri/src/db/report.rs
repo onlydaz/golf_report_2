@@ -32,6 +32,7 @@ pub struct PointSummary {
     position_min: Option<f64>,
     position_max: Option<f64>,
     load_g: Option<f64>,
+    /// Mean actual load in kg for the current PLC; legacy column name, no scaling.
     push_dist_mm: Option<f64>,
     bend_mm: Option<f64>,
     samples: i64,
@@ -218,6 +219,7 @@ pub struct ExportAttempt {
     station: String,
     point_no: i16,
     attempt_no: i16,
+    /// Actual load in kg for the current PLC; raw legacy column, no scaling.
     push_dist_mm: Option<f32>,
     bend_mm: Option<f32>,
 }

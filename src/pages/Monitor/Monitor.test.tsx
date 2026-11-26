@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { useControl, useLive, useLiveRecipe, type LiveRecord } from "../../app/LiveProvider";
 import Monitor from "./Monitor";
+import { useQuery } from "../../lib/useQuery";
+import { db } from "../../lib/db";
 
 vi.mock("../../app/LiveProvider", () => ({ useLive: vi.fn(), useLiveRecipe: vi.fn(), useControl: vi.fn() }));
+vi.mock("../../lib/useQuery", () => ({ useQuery: vi.fn() }));
 
 const confirmed = { handshake: { pcCmd: 0, plcAck: 0, plcIdle: 1, actSku: "MH1253R", actRev: 7 },
   readAt: new Date("2026-11-26T00:00:00Z") };
@@ -22,6 +25,8 @@ const render = () => renderToStaticMarkup(<MemoryRouter><Monitor /></MemoryRoute
 
 describe("monitor active SKU", () => {
   beforeEach(() => {
+    vi.mocked(useQuery).mockReset();
+    vi.mocked(useQuery).mockReturnValue({ data: undefined, loading: false, error: "" });
     vi.mocked(useLive).mockReturnValue(live());
     vi.mocked(useLiveRecipe).mockReturnValue(active());
     vi.mocked(useControl).mockReturnValue({ control: null, lastPoll: null, pollError: null });
@@ -54,7 +59,22 @@ describe("monitor active SKU", () => {
       const html = render();
       expect(html).toContain('<strong class="monitor-sku">0</strong>');
       expect(html).toContain("Khách hàng: 0");
-      expect(html).toContain("Chưa xác định SKU đang hiển thị");
+      expect(html).not.toContain("Chưa xác định SKU đang hiển thị");
     }
+  });
+
+  it("queries 30 saved sticks without an SKU filter while PLC is disconnected and no ActSKU exists", () => {
+    const list = vi.spyOn(db, "list").mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(useLive).mockReturnValue({ ...live(), plcStatus: { state: "disconnected", reason: "test" } });
+    vi.mocked(useLiveRecipe).mockReturnValue({ ...active(), confirmed: undefined, isLive: false });
+    vi.mocked(useQuery).mockImplementation((enabled, run) => {
+      if (enabled) void run();
+      return { data: undefined, loading: false, error: "" };
+    });
+    try {
+      render();
+      expect(list).toHaveBeenCalledWith({}, 1, 30);
+      expect(list.mock.calls.every(([filter]) => filter.productCode === undefined)).toBe(true);
+    } finally { list.mockRestore(); }
   });
 });

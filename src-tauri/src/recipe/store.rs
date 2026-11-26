@@ -197,6 +197,7 @@ mod tests {
             load: Some(i as f64 + 30.0),
             bend: Some(i as f64 + 40.0),
         });
+        input.validate_and_normalize().unwrap();
         let first = save(&pool, input.clone()).await.unwrap();
         assert!(first.summary.configured);
         assert_eq!(first.summary.recipe_rev, 1);
@@ -231,25 +232,30 @@ mod tests {
         let (a, b) = tokio::join!(save(&pool, input.clone()), save(&pool, competing));
         assert_ne!(a.is_ok(), b.is_ok());
         assert_eq!(get(&pool, &input.sku).await.unwrap().summary.recipe_rev, 2);
+        let current = get(&pool, &input.sku).await.unwrap();
         input.recipe_rev = 2;
+        input.stations = current.stations;
+        let original_points = input.stations.butt.points.clone();
+        input.stations.butt.enabled = Some(0);
         input.stations.butt.num_points = Some(1);
-        let reduced = save(&pool, input.clone()).await.unwrap();
-        assert!(
-            reduced.stations.butt.points[1..]
-                .iter()
-                .all(|p| *p == Point::default())
-        );
-        assert_eq!(reduced.summary.recipe_rev, 3);
+        let disabled = save(&pool, input.clone()).await.unwrap();
+        assert_eq!(disabled.stations.butt.enabled, Some(0));
+        assert_eq!(disabled.stations.butt.num_points, Some(1));
+        assert_eq!(disabled.stations.butt.points, original_points);
+        assert_eq!(disabled.summary.recipe_rev, 3);
         input.recipe_rev = 3;
-        // Changing stale, unused values does not increment revision.
-        input.stations.butt.points[9].load = Some(1234.0);
         assert_eq!(
             save(&pool, input.clone()).await.unwrap().summary.recipe_rev,
             3
         );
+        input.stations.butt.enabled = Some(1);
+        let enabled = save(&pool, input.clone()).await.unwrap();
+        assert_eq!(enabled.summary.recipe_rev, 4);
+        assert_eq!(enabled.stations.butt.points, original_points);
+        input.recipe_rev = 4;
         input.stations.butt.points[0].load = Some(0.0);
         assert!(save(&pool, input).await.is_err());
-        assert_eq!(get(&pool, "MH1253R").await.unwrap().summary.recipe_rev, 3);
+        assert_eq!(get(&pool, "MH1253R").await.unwrap().summary.recipe_rev, 4);
         let result_count: i64 = sqlx::query_scalar("SELECT count(*) FROM stick")
             .fetch_one(&pool)
             .await
