@@ -103,14 +103,18 @@ impl Diagnostics {
 }
 
 #[tauri::command]
-pub fn plc_diagnostics(state: State<'_, DiagnosticsState>) -> Diagnostics { state.snapshot() }
+pub async fn plc_diagnostics(auth: State<'_, crate::auth::Auth>, db: State<'_, crate::db::DbPool>, state: State<'_, DiagnosticsState>) -> Result<Diagnostics, String> {
+    let _access = auth.require(&db, false).await?;
+    Ok(state.snapshot())
+}
 
 #[tauri::command]
-pub fn plc_clear_connection_log(state: State<'_, DiagnosticsState>, app: tauri::AppHandle) -> Diagnostics {
+pub async fn plc_clear_connection_log(auth: State<'_, crate::auth::Auth>, db: State<'_, crate::db::DbPool>, state: State<'_, DiagnosticsState>, app: tauri::AppHandle) -> Result<Diagnostics, String> {
+    let _access = auth.require(&db, true).await?;
     use tauri::Emitter;
     let snapshot = state.clear();
     let _ = app.emit("plc://diagnostics", &snapshot);
-    snapshot
+    Ok(snapshot)
 }
 
 #[cfg(test)]

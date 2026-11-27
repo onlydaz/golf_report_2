@@ -21,6 +21,13 @@ pub struct Shutdown {
 }
 
 pub struct Operation(Shutdown);
+/// Reuses the poller's existing pause point; always resumes on error/return.
+pub struct CollectionPause(Shutdown);
+impl Drop for CollectionPause {
+    fn drop(&mut self) {
+        self.0.pause.send_replace(false);
+    }
+}
 impl Drop for Operation {
     fn drop(&mut self) {
         self.0.work.lock().unwrap().operations -= 1;
@@ -53,6 +60,35 @@ impl Shutdown {
     }
     pub fn begin_save(&self) {
         self.work.lock().unwrap().saves += 1;
+    }
+    pub async fn pause_collection(&self) -> Result<CollectionPause, String> {
+        let mut paused = self.paused.subscribe();
+        // A preceding operation may have resumed the poller but its acknowledgement
+        // is still true. Wait for that resume before requesting a new pause.
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            paused.wait_for(|value| !*value),
+        )
+        .await
+        .map_err(|_| "Tác vụ thu thập chưa tiếp tục sau thao tác trước. Vui lòng thử lại.")?
+        .map_err(|_| "Không xác nhận được trạng thái thu thập dữ liệu.")?;
+        self.pause.send_replace(true);
+        let guard = CollectionPause(self.clone());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            paused.wait_for(|value| *value),
+        )
+        .await
+        .map_err(|_| "Chưa hoàn tất chu kỳ đọc/lưu/ACK. Vui lòng chờ trước khi nạp công thức.")?
+        .map_err(|_| "Không xác nhận được trạng thái thu thập dữ liệu.")?;
+        let work = self.work.lock().unwrap();
+        if work.saves != 0 || work.failed != 0 {
+            return Err(
+                "Còn kết quả chờ lưu hoặc lưu lỗi. Cần xử lý trước khi xác nhận SKU sản xuất."
+                    .into(),
+            );
+        }
+        Ok(guard)
     }
     pub fn finish_save(&self, success: bool) {
         let mut work = self.work.lock().unwrap();

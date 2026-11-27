@@ -1,4 +1,5 @@
 mod app_info;
+mod auth;
 mod config;
 mod db;
 mod plc;
@@ -42,6 +43,19 @@ pub fn run() {
             );
             app.manage(db_status);
             app.manage(db_pool);
+            app.manage(auth::Auth::default());
+            // Bootstrap independently: authentication must never stop collection or DB writes.
+            let auth_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    if let Ok(pool) = auth_app.state::<db::DbPool>().get() {
+                        if auth_app.state::<auth::Auth>().initialize(&pool).await.is_ok() {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
 
             let cfg = PlcConfig::default();
             let diagnostics = plc::diagnostics::DiagnosticsState::new(&cfg);
@@ -61,6 +75,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     let status = status_rx.borrow_and_update().clone();
+                    if status != plc::PlcStatus::Connected {
+                        app_handle.state::<production::Production>().uncertain(&app_handle);
+                    }
                     let _ = app_handle.emit("plc://diagnostics", status_diagnostics.status(status.clone()));
                     let _ = app_handle.emit("plc://status", status);
                     if status_rx.changed().await.is_err() {
@@ -82,7 +99,10 @@ pub fn run() {
                     PollEvent::Control(c) => app_handle.emit("plc://control", c),
                     PollEvent::Record(r) => {
                         let production = app_handle.state::<production::Production>().get();
-                        let sku = production.selection.as_ref().map(|s| s.sku.clone()).unwrap_or_default();
+                        // Preserve raw PLC ProductCode; do not attribute uncertain records to the previous SKU.
+                        let sku = if production.error.is_none() {
+                            production.selection.as_ref().map(|s| s.sku.clone()).unwrap_or_default()
+                        } else { String::new() };
                         *emit_sku.lock().unwrap() = Some((sku.clone(), production.session_id.clone()));
                         collection_lifecycle.begin_save();
                         // Preserve the PLC record, including raw ProductCode; publish selected SKU separately.
@@ -173,8 +193,16 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            auth::commands::auth_login,
+            auth::commands::auth_logout,
+            auth::commands::auth_me,
+            auth::commands::auth_change_password,
+            auth::commands::users_list,
+            auth::commands::users_create,
+            auth::commands::users_update,
+            auth::commands::users_reset_password,
+            auth::commands::users_set_active,
             production::production_get,
-            production::production_select,
             shutdown::app_shutdown,
             plc_status,
             plc::diagnostics::plc_diagnostics,
@@ -183,10 +211,6 @@ pub fn run() {
             plc_read_discrete_inputs,
             plc_read_holding_registers,
             plc_read_input_registers,
-            plc_write_coil,
-            plc_write_register,
-            plc_write_coils,
-            plc_write_registers,
             plc_read_control_area,
             plc_reset_read_count,
             db::db_status,

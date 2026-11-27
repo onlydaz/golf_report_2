@@ -21,6 +21,20 @@
   max-width: 1600px; width: 100%; margin: 0 auto;
 }
 .db-banner { margin-bottom: 16px; }
+.main-sider .ant-layout-sider-children { display: flex; flex-direction: column; min-height: 100%; }
+.sidebar-account { margin-top: auto; padding: 12px; }
+.sidebar-account-trigger {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 10px 4px;
+  border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; text-align: left; cursor: pointer;
+}
+.sidebar-account-trigger:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+.sidebar-account-trigger:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.sidebar-account-trigger:disabled { opacity: .6; cursor: not-allowed; }
+.sidebar-account-trigger .ant-avatar { flex-shrink: 0; background: rgba(255, 255, 255, .12); color: #d9e8f4; }
+.sidebar-account-details { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.sidebar-account-details strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.sidebar-account-details span { color: #b9cbdc; font-size: 13px; line-height: 1.5; }
+.sidebar-account-arrow { flex-shrink: 0; font-size: 11px; color: #b9cbdc; }
 /* The menu container is not an action; keyboard focus belongs to its active item. */
 .main-sider .ant-menu:focus { outline: none; }
 .main-sider .ant-menu-item:focus-visible,

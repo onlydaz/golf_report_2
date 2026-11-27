@@ -3,6 +3,7 @@ import type { ExportBatch, StickFilter } from "./db";
 import { db } from "./db";
 import { PLC_LOAD_SOURCE, fmtDateTime } from "./format";
 import { resultLabel } from "../components/Result";
+import type { ReportChartImage } from "./reportChartImages";
 
 const MAX_ROWS = 1_048_576;
 const numeric = (v: number | null) => v != null && Number.isFinite(v) ? v : null;
@@ -85,7 +86,8 @@ export function createReportWorkbook() {
   return book;
 }
 
-export async function buildReportExcel(filter: StickFilter, onProgress: (count: number) => void) {
+export async function buildReportExcel(filter: StickFilter, onProgress: (count: number) => void,
+  charts?: { label: string; images: AsyncIterable<ReportChartImage> }) {
   const book = createReportWorkbook();
   let afterId = 0;
   let maxId: number | undefined;
@@ -102,5 +104,29 @@ export async function buildReportExcel(filter: StickFilter, onProgress: (count: 
     await new Promise((resolve) => setTimeout(resolve, 0));
   } while (true);
   if (!count) return null;
+  if (charts) {
+    const page = book.addWorksheet("Biểu đồ", {
+      views: [{ showGridLines: false }],
+      pageSetup: { paperSize: 8, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    });
+    page.columns = Array.from({ length: 16 }, () => ({ width: 10 }));
+    page.properties.defaultRowHeight = 20;
+    page.mergeCells("A1:P1");
+    page.getCell("A1").value = "Biểu đồ báo cáo chất lượng";
+    page.getCell("A1").font = { name: "Calibri", size: 18, bold: true, color: { argb: "FF123B5D" } };
+    page.getRow(1).height = 30;
+    page.mergeCells("A2:P3");
+    page.getCell("A2").value = charts.label;
+    page.getCell("A2").alignment = { vertical: "middle", wrapText: true };
+    let row = 5;
+    for await (const image of charts.images) {
+      const id = book.addImage({ base64: image.png, extension: "png" });
+      page.addImage(id, { tl: { col: 0, row: row - 1 }, ext: { width: image.width, height: image.height }, editAs: "oneCell" });
+      // Excel row heights use points; image dimensions use CSS pixels (96 dpi).
+      row += Math.ceil(image.height / (20 * 96 / 72)) + 2;
+      page.getRow(row).addPageBreak();
+    }
+    page.pageSetup.printArea = `A1:P${row}`;
+  }
   return { bytes: new Uint8Array(await book.xlsx.writeBuffer()), count };
 }

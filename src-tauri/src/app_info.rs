@@ -17,6 +17,7 @@ pub struct AppInfo {
 }
 
 #[tauri::command]
-pub fn app_info(info: State<'_, AppInfo>) -> AppInfo {
-    info.inner().clone()
+pub async fn app_info(auth: State<'_, crate::auth::Auth>, db: State<'_, crate::db::DbPool>, info: State<'_, AppInfo>) -> Result<AppInfo, String> {
+    let _access = auth.require(&db, false).await?;
+    Ok(info.inner().clone())
 }

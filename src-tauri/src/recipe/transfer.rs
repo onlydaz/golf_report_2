@@ -103,7 +103,7 @@ impl TransferError {
             message: message.into(),
         }
     }
-    fn unknown(message: impl Into<String>) -> Self {
+    pub fn unknown(message: impl Into<String>) -> Self {
         Self {
             kind: Outcome::Unknown,
             message: format!(
@@ -207,6 +207,13 @@ impl RecipeTransfer {
             sku: recipe.summary.sku,
             rev: expected_rev,
         };
+        if initial.matches(&expected) {
+            return Ok(TransferReport {
+                outcome: Outcome::Success,
+                message: format!("PLC đã áp dụng {} · phiên bản {}. Đã xác nhận trạng thái hợp lệ, không ghi lại công thức.", expected.sku, expected.rev),
+                handshake: initial,
+            });
+        }
         *pending = Some(expected.clone());
         for (index, chunk) in words.chunks(chunk_words).enumerate() {
             let addr = RECIPE_BASE + (index * chunk_words) as u16;

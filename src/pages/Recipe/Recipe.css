@@ -9,7 +9,7 @@
 .recipe-page .ant-input-number { width: 100%; }
 .recipe-page .ant-input-number-input { text-align: center; font-variant-numeric: tabular-nums; }
 .recipe-points .ant-table-thead > tr > th { text-align: center; background: var(--c-surface-muted); }
-.recipe-points .ant-table-cell { padding: 10px !important; }
+.recipe-points .ant-table-cell { padding: 10px !important; text-align: center; }
 .recipe-point-unused { opacity: .5; background: var(--c-surface-muted); }
 .recipe-help { color: var(--c-navy-500); margin: 0; font-size: 13px; line-height: 1.6; }
 .recipe-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px; background: white; border: 1px solid var(--c-border); border-radius: 12px; }
@@ -20,5 +20,16 @@
 .recipe-plc-summary > div { display: flex; flex-direction: column; gap: 6px; }
 .recipe-plc-summary span { color: var(--c-navy-500); }
 .recipe-plc-summary strong { color: var(--c-primary); overflow-wrap: anywhere; }
+.recipe-plc-summary .recipe-change-status { color: var(--c-navy-400); }
+.recipe-plc-summary .recipe-change-status[data-allowed="true"] { color: var(--c-ok-text); }
+.recipe-plc-summary .recipe-change-status[data-allowed="false"] { color: var(--c-ng-text); }
 .recipe-plc-condition, .recipe-reconcile { margin-top: 12px; }
-@media (max-width: 1100px) { .recipe-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.recipe-production { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--c-navy-500); font-size: 13px; }
+.recipe-production .production-confirmation { margin-top: 0; }
+.recipe-operator-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.recipe-operator-details { display: flex; flex-direction: column; gap: 24px; margin-top: 20px; }
+.recipe-station-details h3 { margin: 0 0 12px; color: var(--c-navy-800); font-size: 16px; }
+.recipe-readonly-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin: 0 0 16px; }
+.recipe-readonly-settings dt { color: var(--c-navy-500); font-size: 13px; }
+.recipe-readonly-settings dd { margin: 6px 0 0; color: var(--c-navy-800); font-weight: 500; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .recipe-settings, .recipe-readonly-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -12,7 +12,8 @@ React, TypeScript, Vite, Ant Design, Recharts; Tauri 2, Rust, Tokio, SQLx và Po
 - **Lịch sử:** lọc và xem chi tiết phép đo đã lưu.
 - **Báo cáo:** thống kê chất lượng và xuất Excel.
 - **Kết nối PLC:** trạng thái, bộ đếm và nhật ký truyền thông.
-- **Công thức đo:** chọn khách hàng/SKU, lưu thông số và nạp công thức khi được kỹ thuật xác nhận.
+- **Công thức đo:** Admin thiết lập/lưu; Operator xem, chọn khách hàng/SKU và nạp bản đã lưu khi đủ điều kiện an toàn.
+- **Tài khoản:** đăng nhập, đổi mật khẩu; Admin tạo, sửa tên, khóa/mở khóa và đặt lại mật khẩu Operator.
 
 ## 3. Yêu cầu môi trường
 

@@ -5,11 +5,14 @@ import History from "../pages/History/History";
 import Reports from "../pages/Reports/Reports";
 import PlcConnection from "../pages/PlcConnection/PlcConnection";
 import Recipe from "../pages/Recipe/Recipe";
+import Users from "../pages/Users/Users";
+import { useAuth } from "./AuthProvider";
 import MeasurementDetail from "../pages/MeasurementDetail/MeasurementDetail";
 import type { MeasurementNavigation } from "../lib/useOpenStick";
 
 /** Keep the originating page mounted so its filters, SKU and pagination survive Back. */
 export default function Workspace() {
+  const { user } = useAuth();
   const location = useLocation();
   const isDetail = location.pathname.startsWith("/measurements/");
   const background = isDetail ? (location.state as MeasurementNavigation | null)?.background : undefined;
@@ -33,6 +36,7 @@ export default function Workspace() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/plc" element={<PlcConnection />} />
         <Route path="/recipe" element={<Recipe />} />
+        <Route path="/users" element={user?.role === "ADMIN" ? <Users /> : <Navigate to="/monitor" replace />} />
         <Route path="/measurements/:id" element={null} />
         <Route path="*" element={<Navigate to="/monitor" replace />} />
       </Routes>

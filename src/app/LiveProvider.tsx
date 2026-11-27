@@ -48,8 +48,7 @@ interface LiveControl {
 
 const LiveContext = createContext<Live | null>(null);
 const ProductionContext = createContext<{
-  snapshot?: ProductionSnapshot; selecting: boolean;
-  select: (customer: string, sku: string) => Promise<void>;
+  snapshot?: ProductionSnapshot;
 } | null>(null);
 const RecipeContext = createContext<{
   status?: RecipePlcStatus;
@@ -67,8 +66,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [production, setProduction] = useState<ProductionSnapshot>();
   const [last, setLast] = useState<LiveRecord | null>(null);
   const productionRef = useRef<ProductionSnapshot | undefined>(undefined);
-  const [selecting, setSelecting] = useState(false);
-  const selectionInFlight = useRef(false);
   const receiveProduction = (next: ProductionSnapshot) => {
     const previous = productionRef.current;
     if (previous && next.revision <= previous.revision) return;
@@ -95,12 +92,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     })();
     return () => { disposed = true; off?.(); };
   }, []);
-  const selectProduction = async (customer: string, sku: string) => {
-    if (selectionInFlight.current) throw new Error("Đang lưu lựa chọn SKU. Vui lòng chờ.");
-    selectionInFlight.current = true; setSelecting(true);
-    try { receiveProduction(await productionApi.select(customer, sku)); }
-    finally { selectionInFlight.current = false; setSelecting(false); }
-  };
   const [draftDirty, setDraftDirty] = useState(false);
   const [plcStatus, setPlcStatus] = useState<PlcStatus | null>(null);
   const [dbStatus, setDbStatus] = useState<DbStatus>({ connected: false, error: null });
@@ -216,7 +207,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       <ControlContext.Provider value={control}>
         <DiagnosticsContext.Provider value={{ diagnostics, diagnosticsError, clearLog }}>
           <RecipeContext.Provider value={liveRecipe}>
-            <ProductionContext.Provider value={{ snapshot: production, selecting, select: selectProduction }}>
+            <ProductionContext.Provider value={{ snapshot: production }}>
               {children}
             </ProductionContext.Provider>
           </RecipeContext.Provider>

@@ -1,79 +1,95 @@
-//! Tauri commands exposing the PLC actor to the frontend.
+//! Authorized PLC diagnostics. Raw writes are not exposed over IPC; recipes must use the validated handshake.
 
+use crate::{auth::Auth, db::DbPool};
 use tauri::State;
 
-use super::control::{read_control_area, ControlArea};
-use super::{write_pc_read_count, PlcError, PlcHandle, PlcStatus};
+use super::control::{ControlArea, read_control_area};
+use super::{PlcHandle, PlcStatus, write_pc_read_count};
 
 #[tauri::command]
-pub fn plc_status(plc: State<'_, PlcHandle>) -> PlcStatus {
-    plc.status()
+pub async fn plc_status(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
+    plc: State<'_, PlcHandle>,
+) -> Result<PlcStatus, String> {
+    let _access = auth.require(&db, false).await?;
+    Ok(plc.status())
 }
 
 #[tauri::command]
-pub async fn plc_read_coils(plc: State<'_, PlcHandle>, addr: u16, count: u16) -> Result<Vec<bool>, PlcError> {
-    plc.read_coils(addr, count).await
+pub async fn plc_read_coils(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
+    plc: State<'_, PlcHandle>,
+    addr: u16,
+    count: u16,
+) -> Result<Vec<bool>, String> {
+    let _access = auth.require(&db, true).await?;
+    plc.read_coils(addr, count).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn plc_read_discrete_inputs(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
     plc: State<'_, PlcHandle>,
     addr: u16,
     count: u16,
-) -> Result<Vec<bool>, PlcError> {
-    plc.read_discrete_inputs(addr, count).await
+) -> Result<Vec<bool>, String> {
+    let _access = auth.require(&db, true).await?;
+    plc.read_discrete_inputs(addr, count)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn plc_read_holding_registers(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
     plc: State<'_, PlcHandle>,
     addr: u16,
     count: u16,
-) -> Result<Vec<u16>, PlcError> {
-    plc.read_holding_registers(addr, count).await
+) -> Result<Vec<u16>, String> {
+    let _access = auth.require(&db, true).await?;
+    plc.read_holding_registers(addr, count)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn plc_read_input_registers(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
     plc: State<'_, PlcHandle>,
     addr: u16,
     count: u16,
-) -> Result<Vec<u16>, PlcError> {
-    plc.read_input_registers(addr, count).await
-}
-
-#[tauri::command]
-pub async fn plc_write_coil(plc: State<'_, PlcHandle>, addr: u16, value: bool) -> Result<(), PlcError> {
-    plc.write_single_coil(addr, value).await
-}
-
-#[tauri::command]
-pub async fn plc_write_register(plc: State<'_, PlcHandle>, addr: u16, value: u16) -> Result<(), PlcError> {
-    plc.write_single_register(addr, value).await
-}
-
-#[tauri::command]
-pub async fn plc_write_coils(plc: State<'_, PlcHandle>, addr: u16, values: Vec<bool>) -> Result<(), PlcError> {
-    plc.write_multiple_coils(addr, values).await
-}
-
-#[tauri::command]
-pub async fn plc_write_registers(
-    plc: State<'_, PlcHandle>,
-    addr: u16,
-    values: Vec<u16>,
-) -> Result<(), PlcError> {
-    plc.write_multiple_registers(addr, values).await
+) -> Result<Vec<u16>, String> {
+    let _access = auth.require(&db, true).await?;
+    plc.read_input_registers(addr, count)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Read and decode the control area D25000..D25019.
 #[tauri::command]
-pub async fn plc_read_control_area(plc: State<'_, PlcHandle>) -> Result<ControlArea, PlcError> {
-    read_control_area(&plc).await
+pub async fn plc_read_control_area(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
+    plc: State<'_, PlcHandle>,
+) -> Result<ControlArea, String> {
+    let _access = auth.require(&db, true).await?;
+    read_control_area(&plc).await.map_err(|e| e.to_string())
 }
 
 /// Reset PC_ReadCount (D25008..D25009) to 0.
 #[tauri::command]
-pub async fn plc_reset_read_count(plc: State<'_, PlcHandle>) -> Result<(), PlcError> {
-    write_pc_read_count(&plc, 0).await
+pub async fn plc_reset_read_count(
+    auth: State<'_, Auth>,
+    db: State<'_, DbPool>,
+    plc: State<'_, PlcHandle>,
+) -> Result<(), String> {
+    let _access = auth.require(&db, true).await?;
+    write_pc_read_count(&plc, 0)
+        .await
+        .map_err(|e| e.to_string())
 }

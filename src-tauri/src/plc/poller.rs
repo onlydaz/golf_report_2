@@ -95,7 +95,11 @@ pub async fn run_poller_with_shutdown<F, Fut>(
     let mut pending_ack: Option<i32> = None;
 
     loop {
-        if pending_ack.is_none() && *pause.borrow() {
+        // A production boundary must also observe PLC clearing DataReady after ACK.
+        // Resuming with prev_ready=0 preserves detection of the next measurement.
+        if pending_ack.is_none()
+            && (prev_ready == Some(0) || (prev_ready.is_none() && plc.status() != PlcStatus::Connected))
+            && *pause.borrow() {
             paused.send_replace(true);
             if pause.wait_for(|requested| !requested).await.is_err() { return; }
             paused.send_replace(false);

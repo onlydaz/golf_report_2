@@ -8,6 +8,5 @@ export interface ProductionSnapshot {
 }
 export const productionApi = {
   get: () => invoke<ProductionSnapshot>("production_get"),
-  select: (customer: string, sku: string) => invoke<ProductionSnapshot>("production_select", { customer, sku }),
   onChanged: (cb: (value: ProductionSnapshot) => void) => listen<ProductionSnapshot>("production://changed", e => cb(e.payload)),
 };

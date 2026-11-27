@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, Button, Card, Empty, InputNumber, Modal, Popconfirm, Select, Space, Spin, Table, Tabs, Tag, message } from "antd";
 import { useBlocker } from "react-router";
 import { isTauri } from "@tauri-apps/api/core";
 import PageHeader from "../../components/PageHeader";
+import ProductionConfirmation from "../../components/ProductionConfirmation";
 import { useLive, useLiveRecipe, useProduction } from "../../app/LiveProvider";
+import { useAuth } from "../../app/AuthProvider";
 import { errorText } from "../../lib/db";
 import { recipeApi, recipeErrors, recipeApplyBlockReason, transferFailure } from "../../lib/recipe";
 import type { Recipe as RecipeData, RecipePoint, RecipeStation, RecipeSummary, StationName, RecipeTransferReport } from "../../lib/recipe";
@@ -63,7 +65,47 @@ function StationEditor({ name, station, disabled, onChange }: {
   </div>;
 }
 
+const recipeValue = (value: number | null) => value == null ? "—"
+  : value.toLocaleString("vi-VN", { maximumSignificantDigits: 21 });
+
+function StationDetails({ name, station }: { name: StationName; station: RecipeStation }) {
+  const points = station.enabled === 1 ? station.points.slice(0, Math.max(0, station.numPoints ?? 0)) : [];
+  return <section className="recipe-station-details" aria-label={`Trạm ${name.toUpperCase()}`}>
+    <h3>Trạm {name.toUpperCase()}</h3>
+    <dl className="recipe-readonly-settings">
+      <div><dt>Sử dụng trạm</dt><dd>{station.enabled === 1 ? "Sử dụng" : station.enabled === 0 ? "Bỏ qua trạm" : "Chưa thiết lập"}</dd></div>
+      {commonFields.map(field => <div key={field.key}><dt>{field.title}</dt><dd>{recipeValue(station[field.key])}</dd></div>)}
+    </dl>
+    {points.length > 0 ? <Table className="recipe-points" size="small" pagination={false} scroll={{ x: 960 }}
+      dataSource={points.map((point, index) => ({ ...point, index }))} rowKey="index" columns={[
+        { title: "Điểm đo", key: "point", align: "center", width: 90, render: (_, row) => `P${row.index + 1}` },
+        ...pointFields.map(field => ({ title: field.title, key: field.key, align: "center" as const,
+          render: (_: unknown, row: RecipePoint) => recipeValue(row[field.key]),
+        })),
+      ]} /> : <p className="recipe-help">Không có điểm đo được sử dụng.</p>}
+  </section>;
+}
+
+function OperatorRecipe({ recipe, loading, applyButton }: { recipe?: RecipeData; loading: boolean; applyButton: ReactNode }) {
+  const [showDetails, setShowDetails] = useState(false);
+  return <Card className="section-card" title={`Công thức đo · ${recipe?.sku ?? "—"}`}
+    extra={recipe && <Tag color={recipe.configured ? "green" : "gold"}>{recipe.configured ? "Đã thiết lập" : "Chưa thiết lập"}</Tag>}>
+    {!recipe ? <Empty description={loading ? "Đang tải công thức…" : "Chọn mã hàng để xem công thức đo"} />
+      : !recipe.configured && <Alert type="info" showIcon title="Chưa thiết lập công thức. Vui lòng liên hệ quản trị viên." />}
+    <div className="recipe-operator-actions">
+      <Button disabled={!recipe} aria-expanded={showDetails} aria-controls="recipe-operator-details"
+        onClick={() => setShowDetails(value => !value)}>{showDetails ? "Ẩn chi tiết công thức" : "Xem chi tiết công thức"}</Button>
+      {applyButton}
+    </div>
+    {showDetails && recipe && <div id="recipe-operator-details" className="recipe-operator-details">
+      {(["butt", "tip"] as const).map(name => <StationDetails key={name} name={name} station={recipe.stations[name]} />)}
+    </div>}
+  </Card>;
+}
+
 export default function Recipe() {
+  const { user } = useAuth();
+  const canEdit = user?.role === "ADMIN";
   const { dbStatus, plcStatus } = useLive();
   const production = useProduction();
   const [messages, messageHolder] = message.useMessage();
@@ -82,9 +124,10 @@ export default function Recipe() {
   const [saveError, setSaveError] = useState("");
   const [showValidation, setShowValidation] = useState(false);
   const dirty = !!draft && JSON.stringify(draft.stations) !== JSON.stringify(saved?.stations);
-  const busy = loading || saving || applying || production.selecting;
-  const writing = saving || applying || production.selecting;
+  const busy = loading || saving || applying;
+  const writing = saving || applying;
   const plcConnected = plcStatus?.state === "connected";
+  const changeAllowed = !plcConnected || !plcRecipe?.handshake ? null : plcRecipe.handshake.plcIdle === 1;
   const applyBlocked = recipeApplyBlockReason(saved, dirty, dbStatus.connected, plcConnected, busy, plcRecipe)
     ?? (loadError ? "Không tải được công thức. Hãy tải lại." : null);
   const errors = draft ? recipeErrors(draft) : [];
@@ -141,16 +184,6 @@ export default function Recipe() {
   }, [dbStatus.connected]);
 
   useEffect(() => {
-    const selection = production.snapshot?.selection;
-    if (selection) { setCustomer(selection.customer); setSku(selection.sku); }
-  }, [production.snapshot?.selection]);
-
-  const chooseSku = async (value: string) => {
-    try { await production.select(customer, value); setSku(value); }
-    catch (e) { messages.error(`Không đổi được SKU sản xuất: ${errorText(e)}`); }
-  };
-
-  useEffect(() => {
     // Reconnection must not replace an editor's draft.
     if (!sku || !dbStatus.connected || currentDraft.current?.sku === sku) {
       setLoading(false);
@@ -173,12 +206,12 @@ export default function Recipe() {
     if (busy) return;
     if (dirty && !await modal.confirm({ title: "Công thức có thay đổi chưa lưu",
       content: "Bạn có muốn bỏ các thay đổi để tiếp tục?", okText: "Bỏ thay đổi", cancelText: "Tiếp tục sửa" })) return;
-    setDraft(undefined); setSaved(undefined); setSaveError(""); setShowValidation(false);
+    setDraft(undefined); setSaved(undefined); setLoadError(""); setSaveError(""); setShowValidation(false); setTransferNotice(undefined);
     action();
   };
 
   const save = async () => {
-    if (!draft || busy) return;
+    if (!canEdit || !draft || busy) return;
     setShowValidation(true);
     if (errors.length) { messages.error("Vui lòng kiểm tra thông số ở cả hai trạm."); return; }
     setSaving(true); setSaveError("");
@@ -191,6 +224,16 @@ export default function Recipe() {
       setSaveError(errorText(e)); messages.error("Không lưu được công thức. Dữ liệu đang sửa được giữ lại.");
     } finally { setSaving(false); }
   };
+
+  const stationTabs = canEdit && draft && <Tabs items={(["butt", "tip"] as const).map(name => ({ key: name, label: `Trạm ${name.toUpperCase()}`,
+    children: <StationEditor name={name} station={draft.stations[name]} disabled={!canEdit || busy || !!loadError}
+      onChange={station => { if (canEdit) setDraft(current => current && ({ ...current, stations: { ...current.stations, [name]: station } })); }} />,
+  }))} />;
+  const applyButton = <Popconfirm title={`Nạp hoặc xác nhận sử dụng ${saved?.sku ?? ""} · phiên bản ${saved?.recipeRev ?? ""}?`}
+    description="Dùng bản đã lưu. Nếu PLC đã áp dụng đúng công thức, hệ thống chỉ xác nhận sử dụng, không ghi lại."
+    okText="Xác nhận" cancelText="Hủy" disabled={!!applyBlocked} onConfirm={() => runTransfer()}>
+    <Button loading={applying} disabled={!!applyBlocked} title={applyBlocked ?? undefined}>Nạp xuống PLC</Button>
+  </Popconfirm>;
 
   return <div className="recipe-page">
     {messageHolder}{modalHolder}
@@ -206,25 +249,29 @@ export default function Recipe() {
         <label className="filter-field"><span>Mã hàng (SKU)</span>
           <Select aria-label="Mã hàng (SKU)" value={sku} placeholder="Chọn mã hàng" disabled={busy || !dbStatus.connected}
             options={list.filter(row => row.customer === customer).map(row => ({ value: row.sku, label: row.sku }))}
-            onChange={value => { if (value !== sku) void discardThen(() => { void chooseSku(value); }); }} />
+            onChange={value => { if (value !== sku) void discardThen(() => setSku(value)); }} />
         </label>
-        {saved && <div className="recipe-summary">
+        {canEdit && saved && <div className="recipe-summary">
           <Space wrap>
             <Tag color={saved.configured ? "green" : "gold"}>{saved.configured ? "Đã thiết lập" : "Chưa thiết lập"}</Tag>
             {dirty && <Tag color="orange">Có thay đổi chưa lưu</Tag>}</Space>
         </div>}
       </div>
+      <div className="recipe-production">
+        <span>SKU sản xuất: <strong>{production.snapshot?.selection?.sku ?? "—"}</strong></span>
+        <ProductionConfirmation />
+      </div>
     </Card>
-    {production.snapshot?.error && <Alert type="error" showIcon title={production.snapshot.error} />}
     {loadError && <Alert type="error" showIcon title="Không tải được công thức" description={loadError} />}
     {saveError && <Alert type="error" showIcon title="Lưu công thức thất bại" description={saveError} />}
     <Card className="section-card" title="Công thức đang áp dụng trên PLC">
       <div className="recipe-plc-summary">
         <div><span>Mã hàng đang áp dụng</span><strong>{plcConnected ? plcRecipe?.handshake?.actSku || "—" : "—"}</strong></div>
-        <div><span>Cho phép đổi công thức</span><strong>{!plcConnected || !plcRecipe?.handshake ? "Chưa xác định"
-          : plcRecipe.handshake.plcIdle === 1 ? "Được phép" : "Chưa được phép"}</strong></div>
+        <div><span>Cho phép đổi công thức</span><strong className="recipe-change-status" data-allowed={changeAllowed ?? "unknown"}>
+          {changeAllowed === null ? "Chưa xác định" : changeAllowed ? "Có" : "Không"}
+        </strong></div>
       </div>
-      {plcRecipe?.commissioned && <p className="recipe-help">Xác nhận kỹ thuật: {plcRecipe.confirmationReference}
+      {canEdit && plcRecipe?.commissioned && <p className="recipe-help">Xác nhận kỹ thuật: {plcRecipe.confirmationReference}
         {!plcRecipe.blockedReason && <> · Tối đa {plcRecipe.maxWriteWords} WORD/lệnh ghi.</>}</p>}
       {applyBlocked && applyBlocked !== "PLC chưa kết nối." && <Alert className="recipe-plc-condition" type="info" showIcon title={applyBlocked} />}
       {(plcRecipe?.needsReconcile || transferNotice?.outcome === "unknown") && <Popconfirm
@@ -235,27 +282,20 @@ export default function Recipe() {
       </Popconfirm>}
     </Card>
     {transferNotice && <Alert showIcon type={transferNotice.outcome === "success" ? "success" : transferNotice.outcome === "failed" ? "error" : "warning"}
-      title={transferNotice.outcome === "success" ? "Nạp công thức hoàn tất" : transferNotice.outcome === "failed" ? "Nạp công thức thất bại" : "Chưa xác định kết quả nạp"}
+      title={transferNotice.outcome === "success" ? "Đã xác nhận công thức sản xuất" : transferNotice.outcome === "failed" ? "Nạp công thức thất bại" : "Chưa xác định kết quả nạp"}
       description={transferNotice.message} />}
     {showValidation && errors.length > 0 && <Alert type="error" showIcon title="Thông số chưa hợp lệ"
       description={<ul className="recipe-errors">{errors.map((error, i) => <li key={i}>{error}</li>)}</ul>} />}
     <Spin spinning={loading}>
-      {draft ? <Card className="section-card">
-        <Tabs items={(["butt", "tip"] as const).map(name => ({ key: name, label: `Trạm ${name.toUpperCase()}`,
-          children: <StationEditor name={name} station={draft.stations[name]} disabled={busy || !!loadError}
-            onChange={station => setDraft(current => current && ({ ...current, stations: { ...current.stations, [name]: station } }))} />,
-        }))} />
-      </Card> : <Card className="section-card"><Empty description={loading ? "Đang tải công thức…" : "Chọn mã hàng để thiết lập công thức đo"} /></Card>}
+      {canEdit ? <Card className="section-card">
+        {stationTabs || <Empty description={loading ? "Đang tải công thức…" : "Chọn mã hàng để thiết lập công thức đo"} />}
+      </Card> : <OperatorRecipe key={saved?.sku ?? "empty"} recipe={saved} loading={loading} applyButton={applyButton} />}
     </Spin>
-    <div className="recipe-actions">
+    {canEdit && <div className="recipe-actions">
       <span>Thông số được lưu theo mã hàng và áp dụng chung cho hai trạm.</span>
-      <Space><Popconfirm title={`Nạp ${saved?.sku ?? ""} · phiên bản ${saved?.recipeRev ?? ""} xuống PLC?`}
-        description="Chỉ nạp bản đã lưu. PLC kiểm tra và áp dụng thông số máy."
-        okText="Xác nhận nạp" cancelText="Hủy" disabled={!!applyBlocked} onConfirm={() => runTransfer()}>
-        <Button loading={applying} disabled={!!applyBlocked} title={applyBlocked ?? undefined}>Nạp xuống PLC</Button>
-      </Popconfirm>
+      <Space>{applyButton}
         <Button type="primary" loading={saving} disabled={!draft || !dirty || busy || !!loadError || !dbStatus.connected} onClick={save}>Lưu công thức</Button></Space>
-    </div>
+    </div>}
     <Modal open={blocker.state === "blocked"} title={writing ? "Đang xử lý công thức" : "Công thức có thay đổi chưa lưu"}
       okText="Bỏ thay đổi và rời trang" cancelText="Ở lại trang" okButtonProps={{ disabled: writing }}
       onOk={() => { if (blocker.state === "blocked" && !writing) blocker.proceed(); }}

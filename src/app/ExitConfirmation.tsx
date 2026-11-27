@@ -3,14 +3,12 @@ import { Alert, Modal } from "antd";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { errorText } from "../lib/db";
-import { useLiveRecipe } from "./LiveProvider";
 
-export default function ExitConfirmation() {
+export default function ExitConfirmation({ draftDirty = false, applying = false }: { draftDirty?: boolean; applying?: boolean }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
-  const { draftDirty, applying } = useLiveRecipe();
   useEffect(() => {
     if (!isTauri()) return;
     let disposed = false;

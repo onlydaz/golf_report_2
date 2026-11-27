@@ -7,6 +7,7 @@ import ResetReadCountButton from "../../components/ResetReadCountButton";
 import { db } from "../../lib/db";
 import { useQuery } from "../../lib/useQuery";
 import { useControl, useLive, usePlcDiagnostics } from "../../app/LiveProvider";
+import { useAuth } from "../../app/AuthProvider";
 import { fmtDateTime, fmtInt, fmtNum } from "../../lib/format";
 import "./PlcConnection.css";
 
@@ -20,6 +21,8 @@ function elapsed(from: string | null | undefined, now: number) {
 }
 
 export default function PlcConnection() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const { plcStatus, dbStatus, last, savedTick } = useLive();
   const latestSaved = useQuery(dbStatus.connected && !last, () => db.list({}, 1, 1), [savedTick]);
   const latestStickNo = last?.record.stickNo ?? latestSaved.data?.items[0]?.stickNo;
@@ -41,7 +44,7 @@ export default function PlcConnection() {
     { label: "Độ trễ đọc", value: connected && d?.readLatencyMs != null ? `${fmtNum(d.readLatencyMs, 1)} ms` : "—", title: "Thời gian hoàn thành lượt đọc gần nhất qua Actor, gồm thời gian chờ hàng đợi" },
     { label: "DataReady", value: fmtInt(c?.dataReady) },
     { label: "PC_ReadDone", value: fmtInt(c?.pcReadDone) },
-    { label: "PC_ReadCount", value: <span className="plc-read-count">{fmtInt(c?.pcReadCount)}{SHOW_PLC_TEST_CONTROLS && <ResetReadCountButton />}</span> },
+    { label: "PC_ReadCount", value: <span className="plc-read-count">{fmtInt(c?.pcReadCount)}{isAdmin && SHOW_PLC_TEST_CONTROLS && <ResetReadCountButton />}</span> },
     { label: "Lỗi đọc hôm nay", value: d ? fmtInt(today ? d.readErrorsToday : 0) : "—", title: "Số lượt đọc thất bại hôm nay trong phiên ứng dụng hiện tại" },
     { label: "Mất kết nối hôm nay", value: d ? fmtInt(today ? d.disconnectsToday : 0) : "—", title: "Số lần mất kết nối sau khi đã kết nối thành công, hôm nay trong phiên ứng dụng hiện tại" },
     { label: "TotalCount", value: fmtInt(c?.totalCount) },
@@ -70,7 +73,7 @@ export default function PlcConnection() {
           <label className="filter-field"><span>Unit ID</span><Input aria-label="Unit ID" readOnly value={d?.unitId ?? "—"} /></label>
         </div>
       </Card>
-      {SHOW_PLC_TEST_CONTROLS && <ControlAreaPanel />}
+      {isAdmin && SHOW_PLC_TEST_CONTROLS && <ControlAreaPanel />}
       </div>
       <div className="plc-connection-right">
         <Card className="section-card" title="Trạng thái kết nối" extra={<Tag color={connected ? "green" : status?.state === "disconnected" ? "red" : "gold"}>
@@ -79,7 +82,7 @@ export default function PlcConnection() {
           {pollError && <Alert className="plc-read-error" type="error" showIcon title="Lỗi đọc PLC" description={pollError.message} />}
           <dl className="plc-metrics">{metrics.map((m) => <div key={m.label} title={m.title}><dt>{m.label}</dt><dd>{m.value}</dd></div>)}</dl>
         </Card>
-        <Card className="section-card" title="Nhật ký kết nối PLC" extra={<Button onClick={clear} loading={clearing} disabled={!d?.logs.length}>Xóa</Button>}>
+        <Card className="section-card" title="Nhật ký kết nối PLC" extra={isAdmin && <Button onClick={clear} loading={clearing} disabled={!d?.logs.length}>Xóa</Button>}>
           <div className="plc-connection-log" role="log" aria-label="Nhật ký kết nối PLC" tabIndex={0}>
             {d?.logs.length ? d.logs.map((log, i) => <div className={`plc-log-line plc-log-${log.tone}`} key={`${log.at}-${i}`}>
               <i aria-hidden="true" /><span><time>{fmtDateTime(log.at)}</time> · {log.message} · {log.address}</span>

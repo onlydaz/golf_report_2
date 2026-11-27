@@ -1,0 +1,2 @@
+.production-confirmation { display: block; margin-top: 7px; font-size: 13px; font-weight: 400; color: var(--c-navy-500); }
+.production-confirmation[data-confirmed="true"] { color: var(--c-ok-text); }

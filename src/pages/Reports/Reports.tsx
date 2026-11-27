@@ -1,21 +1,18 @@
-import { useState } from "react";
-import { Alert, Button, Card, DatePicker, Empty, InputNumber, Pagination, Select, Spin, Table, message } from "antd";
+import { useRef, useState } from "react";
+import { Alert, Button, Card, DatePicker, Empty, InputNumber, Select, Spin, Table, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { FileExcelOutlined, FileTextOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { useLive } from "../../app/LiveProvider";
 import PageHeader from "../../components/PageHeader";
 import { useOpenStick } from "../../lib/useOpenStick";
 import { ResultTag } from "../../components/Result";
-import { referenceCpk } from "../../lib/reportStats";
-import { reportTimeline } from "../../lib/reportTimeline";
-import { db, errorText, type PointSummary, type ReportSummary, type StickFilter, type StickRow } from "../../lib/db";
+import { db, errorText, type PointSummary, type StickFilter, type StickRow } from "../../lib/db";
 import { PLC_LOAD_SOURCE, fmtDateTime, fmtInt, fmtKg, fmtNum, fmtRate } from "../../lib/format";
 import { useQuery } from "../../lib/useQuery";
-import { colors } from "../../theme/tokens";
+import { QualityCharts, Histogram } from "./ReportCharts";
 import "./Reports.css";
 
 interface Draft {
@@ -30,114 +27,6 @@ const toFilter = (d: Draft): StickFilter => ({
   buttResult: d.buttResult, tipResult: d.tipResult,
 });
 const empty = (description = "Không có dữ liệu theo bộ lọc") => <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={description} />;
-const dayLabel = (v: string) => dayjs(v).format("DD/MM");
-
-function QualityCharts({ report, loading, filter }: { report?: ReportSummary; loading: boolean; filter: StickFilter }) {
-  const [chartPage, setChartPage] = useState<number>();
-  const timeline = reportTimeline(report, filter, chartPage);
-  const timeFormat = timeline.halfHour ? "DD/MM/YYYY HH:mm" : "DD/MM/YYYY";
-  const daily = report?.daily ?? [];
-  const ng = [...[1, 2, 3, 4].map((pointNo) => ({ station: "BUTT", pointNo })), { station: "TIP", pointNo: 1 }]
-    .map((p) => ({ ...p, ng: report?.points.find((r) => r.station === p.station && r.pointNo === p.pointNo)?.ng ?? 0 }));
-  const rates = daily.flatMap((d, i) => {
-    const row = { ...d, rate: d.total ? d.ok * 100 / d.total : null };
-    // Break the line across dates with no measurements; never invent a daily rate.
-    return i && dayjs(d.day).diff(dayjs(daily[i - 1].day), "day") > 1
-      ? [{ day: dayjs(daily[i - 1].day).add(1, "day").format("YYYY-MM-DD"), rate: null, total: 0, ok: 0, ng: 0 }, row]
-      : [row];
-  });
-  const low = Math.min(75, ...rates.flatMap((d) => d.rate == null ? [] : [Math.floor(d.rate / 5) * 5]));
-  return <section className="report-charts">
-    <Card className="section-card report-time-card" title={`Số lượng OK / NG theo ${timeline.halfHour ? "30 phút" : "ngày"}`}
-      extra={<div className="report-time-legend" aria-label="Chú giải kết quả"><span><i />OK</span><span><i />NG</span></div>}>
-      <div className="report-time-window"><small>{timeline.items[0].from.format(timeFormat)} – {timeline.items[timeline.items.length - 1].to.format(timeFormat)}</small>
-        <Pagination size="small" simple current={timeline.current} total={timeline.pages} pageSize={1} onChange={setChartPage} /></div>
-      <Spin spinning={loading}><div className="report-chart">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={timeline.items} maxBarSize={36} margin={{ top: 16, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
-            <XAxis dataKey="label" interval={0} tick={{ fontSize: 12 }} />
-            <YAxis allowDecimals={false} width={45} />
-            <Tooltip labelFormatter={(_, payload) => {
-              const row = payload?.[0]?.payload;
-              return row ? `${row.from.format(timeFormat)} – ${row.to.format(timeFormat)}` : "";
-            }} />
-            <Bar dataKey="ok" name="OK" stackId="result" fill={colors.okSolid} isAnimationActive={false} />
-            <Bar dataKey="ng" name="NG" stackId="result" fill={colors.ngSolid} isAnimationActive={false} />
-          </BarChart>
-        </ResponsiveContainer></div></Spin>
-    </Card>
-    <Card className="section-card" title="NG theo công đoạn / điểm đo">
-      <Spin spinning={loading}><div className="report-ng-list">
-        {ng.map((p) => <div key={`${p.station}-${p.pointNo}`} className="report-ng-row">
-          <span className="report-ng-label">{p.station} P{p.pointNo}</span>
-          <div className={`report-ng-track ${p.ng === 0 ? "report-ng-track-zero" : ""}`}><span style={{ width: `${report?.stats.total ? p.ng * 100 / report.stats.total : 0}%` }} /></div>
-          <b className="report-ng-value">{fmtInt(p.ng)} · {p.ng ? fmtRate(p.ng, report?.stats.total ?? 0) : "0%"}</b>
-        </div>)}
-      </div></Spin>
-    </Card>
-    <Card className="section-card" title="Tỷ lệ OK theo ngày">
-      <Spin spinning={loading}><div className="report-chart">
-        {rates.length ? <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={rates} margin={{ top: 30, right: 20, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
-            <XAxis dataKey="day" tickFormatter={dayLabel} tick={{ fontSize: 12 }} />
-            <YAxis domain={[low, 100]} width={48} tickFormatter={(v) => `${v}%`} />
-            <Tooltip labelFormatter={(v) => dayjs(String(v)).format("DD/MM/YYYY")}
-              formatter={(v) => [`${fmtNum(Number(v))}%`, "Tỷ lệ OK"]} />
-            <ReferenceLine y={95} stroke="#94a3b8" strokeDasharray="5 4" label={{ value: "Mục tiêu 95%", position: "insideBottomRight", fontSize: 12 }} />
-            <Line dataKey="rate" type="linear" stroke={colors.primary} strokeWidth={2} connectNulls={false} isAnimationActive={false}
-              dot={({ cx, cy, value, index }) => value == null ? <g key={index} /> : <circle key={index} cx={cx} cy={cy} r={4} fill={Number(value) < 95 ? colors.ngSolid : colors.okSolid} />}
-              activeDot={{ r: 6 }}>
-              <LabelList dataKey="rate" position="top" fontSize={11} formatter={(v) => v == null ? "" : `${fmtNum(Number(v), 1)}%`} />
-            </Line>
-          </LineChart>
-        </ResponsiveContainer> : empty()}</div></Spin>
-    </Card>
-  </section>;
-}
-
-function Histogram({ report, loading }: { report?: ReportSummary; loading: boolean }) {
-  const [point, setPoint] = useState(0);
-  const limits = report?.histogramLimits;
-  const distribution = report?.bendDistribution?.find((d) => d.pointNo === point);
-  const cpk = referenceCpk(distribution?.count ?? 0, distribution?.mean, distribution?.sampleStdDev, limits);
-  const bins = limits ? Array.from({ length: 14 }, (_, bucket) => {
-    const [lo, hi] = limits;
-    const step = (hi - lo) / 12;
-    const count = report!.histogram.filter((b) => b.bucket === bucket && (!point || b.pointNo === point)).reduce((sum, b) => sum + b.count, 0);
-    return { bucket, count, label: bucket === 0 ? `< ${fmtNum(lo)}` : bucket === 13 ? `> ${fmtNum(hi)}`
-      : `${fmtNum(lo + (bucket - 1) * step)}–${fmtNum(lo + bucket * step)}`, outside: bucket === 0 || bucket === 13 };
-  }) : [];
-  const total = bins.reduce((s, b) => s + b.count, 0);
-  const outside = bins.filter((b) => b.outside).reduce((s, b) => s + b.count, 0);
-  return <Card className="section-card" title="Phân bố độ cong BUTT (tất cả điểm)"
-    extra={<Select aria-label="Điểm phân bố độ cong BUTT" value={point} onChange={setPoint}
-      options={[{ value: 0, label: "Tất cả điểm" }, ...[1, 2, 3, 4].map((n) => ({ value: n, label: `P${n}` }))]} />}>
-    <Spin spinning={loading}>
-      <div className="report-hist-stats">
-        <span>Tổng lượt đo <b>{limits ? fmtInt(total) : "—"}</b></span>
-        <span>Trong giới hạn <b>{limits ? fmtInt(total - outside) : "—"}</b></span>
-        <span className="report-hist-outside">Vượt giới hạn <b className="report-hist-outside">{limits ? fmtInt(outside) : "—"}</b></span>
-        <span>Tỷ lệ trong giới hạn <b>{limits && total ? fmtRate(total - outside, total) : "—"}</b></span>
-      </div>
-      <div className="report-hist-legend"><span><i />Trong giới hạn</span><span><i />Vượt giới hạn</span></div>
-      {limits && total ? <div className="report-hist-scroll"><div className="report-hist-chart">
-        <ResponsiveContainer width="100%" height="100%"><BarChart data={bins} margin={{ top: 24, right: 16, bottom: 40, left: 14 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
-          <XAxis dataKey="label" interval={0} angle={-30} textAnchor="end" tick={{ fontSize: 11 }} height={65}
-            label={{ value: "Khoảng độ cong (mm)", position: "bottom", offset: 20 }} />
-          <YAxis allowDecimals={false} width={65} label={{ value: "Số lượt đo", angle: -90, position: "insideLeft" }} />
-          <Tooltip formatter={(v) => [fmtInt(Number(v)), "Lượt đo"]} labelFormatter={(v) => `${v} mm`} />
-          <Bar dataKey="count" isAnimationActive={false}>{bins.map((b) => <Cell key={b.bucket} fill={b.outside ? colors.limit : colors.primary} />)}<LabelList dataKey="count" position="top" /></Bar>
-        </BarChart></ResponsiveContainer>
-      </div></div> : <div className="report-chart">{empty(!report ? "Chưa có dữ liệu báo cáo" : !limits ? "Chưa cấu hình giới hạn BUTT hợp lệ" : "Chưa có lượt đo BUTT theo bộ lọc")}</div>}
-      <p className="report-note report-distribution-summary">Trung bình: {fmtNum(distribution?.mean)} mm · Độ lệch chuẩn mẫu: {fmtNum(distribution?.sampleStdDev)} mm · Cpk tham chiếu: {fmtNum(cpk)}</p>
-      {!!report?.invalidAttempts && <p className="report-note">Bỏ qua {fmtInt(report.invalidAttempts)} lượt BUTT có độ cong không hữu hạn.</p>}
-    </Spin>
-  </Card>;
-}
-
 const pointColumns: ColumnsType<PointSummary> = [
   { title: "Trạm / Điểm", render: (_, p) => `${p.station} · P${p.pointNo}`, align: "left" },
   { title: "Vị trí (mm)", render: (_, p) => p.positionMin === p.positionMax ? fmtNum(p.positionMin) : `${fmtNum(p.positionMin)} – ${fmtNum(p.positionMax)}` },
@@ -169,6 +58,7 @@ export default function Reports() {
   const openStick = useOpenStick();
   const [validation, setValidation] = useState("");
   const [exporting, setExporting] = useState(false);
+  const exportInFlight = useRef(false);
   const [exportCount, setExportCount] = useState(0);
   const [messages, contextHolder] = message.useMessage();
   const report = useQuery(dbStatus.connected, () => db.report(filter), [filter, revision], false);
@@ -188,17 +78,27 @@ export default function Reports() {
     const d = defaults(); setDraft(d); setFilter(toFilter(d)); setPage(1); setValidation(""); setRevision((v) => v + 1);
   };
   const exportExcel = async () => {
+    if (exportInFlight.current || report.loading || !data) return;
+    exportInFlight.current = true;
+    // Keep the applied filter and displayed summary fixed throughout file selection/export.
+    const exportFilter = { ...filter };
+    const exportReport = data;
     setExporting(true); setExportCount(0);
     try {
       const path = await save({ defaultPath: `New-Ocean-${dayjs().format("YYYYMMDD-HHmmss")}.xlsx`, filters: [{ name: "Excel", extensions: ["xlsx"] }] });
       if (!path) return;
-      const { buildReportExcel } = await import("../../lib/reportExcel");
-      const result = await buildReportExcel(filter, setExportCount);
+      const [{ buildReportExcel }, { reportChartImages, chartFilterLabel }] = await Promise.all([
+        import("../../lib/reportExcel"), import("../../lib/reportChartImages"),
+      ]);
+      const result = await buildReportExcel(exportFilter, setExportCount, {
+        label: `${chartFilterLabel(exportFilter)} · Cập nhật ${fmtDateTime(exportReport.generatedAt)}`,
+        images: reportChartImages(exportReport, exportFilter),
+      });
       if (!result) { messages.info("Không có dữ liệu phù hợp để xuất Excel."); return; }
       await writeFile(path, result.bytes);
       messages.success(`Đã xuất Excel ${fmtInt(result.count)} gậy.`);
     } catch (e) { messages.error(`Xuất Excel thất bại: ${errorText(e)}`, 8); }
-    finally { setExporting(false); }
+    finally { exportInFlight.current = false; setExporting(false); }
   };
   const cards = [
     { label: "Tổng số gậy", value: fmtInt(s?.total), note: s && s.total - s.ok - s.ng > 0 ? `${fmtInt(s.total - s.ok - s.ng)} chưa đo / kết quả khác` : "", tone: "blue" },

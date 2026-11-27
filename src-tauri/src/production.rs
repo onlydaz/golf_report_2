@@ -1,7 +1,9 @@
-//! Operator selection, persisted separately from PLC ActSKU and recipe parameters.
+//! Confirmed production SKU, persisted separately from the recipe editor's selection.
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Mutex};
 use tauri::{Emitter, State};
+
+const UNCONFIRMED: &str = "Chưa xác nhận với PLC";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Selection {
@@ -32,6 +34,8 @@ pub struct Snapshot {
 pub struct Production {
     path: PathBuf,
     state: Mutex<Snapshot>,
+    pub transition: tokio::sync::Mutex<()>,
+    confirmation: Mutex<Option<tokio::sync::watch::Receiver<crate::plc::PlcStatus>>>,
 }
 
 impl Production {
@@ -47,7 +51,10 @@ impl Production {
             Err(e) => Err(e.to_string()),
         };
         let (selection, error) = match result {
-            Ok(s) => (s, None),
+            Ok(s) => {
+                let error = s.as_ref().map(|_| UNCONFIRMED.to_string());
+                (s, error)
+            }
             Err(e) => (
                 None,
                 Some(format!("Không đọc được SKU sản xuất đã lưu: {e}")),
@@ -56,6 +63,8 @@ impl Production {
         let started_at = chrono::Utc::now();
         Self {
             path,
+            transition: tokio::sync::Mutex::new(()),
+            confirmation: Mutex::new(None),
             state: Mutex::new(Snapshot {
                 selection,
                 error,
@@ -67,13 +76,23 @@ impl Production {
     }
 
     pub fn get(&self) -> Snapshot {
-        self.state.lock().unwrap().clone()
+        let mut snapshot = self.state.lock().unwrap().clone();
+        // Collection must fail closed immediately, even before the connection event
+        // task has published the disconnect to the UI.
+        if snapshot.selection.is_some() && snapshot.error.is_none() {
+            let valid = self.confirmation.lock().unwrap().as_ref().is_some_and(|connection| {
+                !connection.has_changed().unwrap_or(true)
+                    && *connection.borrow() == crate::plc::PlcStatus::Connected
+            });
+            if !valid { snapshot.error = Some(UNCONFIRMED.into()); }
+        }
+        snapshot
     }
 
     fn set(&self, selection: Selection) -> Result<Snapshot, String> {
         selection.validate()?;
         let mut state = self.state.lock().unwrap();
-        if state.selection.as_ref() == Some(&selection) {
+        if state.selection.as_ref() == Some(&selection) && state.error.is_none() {
             return Ok(state.clone());
         }
         // Publish in memory only after the complete selection is persisted.
@@ -89,49 +108,57 @@ impl Production {
             Ok(())
         };
         persist().map_err(|e| format!("Không lưu được SKU sản xuất: {e}"))?;
-        let sku_changed = state.selection.as_ref().map(|s| s.sku.as_str()) != Some(selection.sku.as_str());
+        let sku_changed =
+            state.selection.as_ref().map(|s| s.sku.as_str()) != Some(selection.sku.as_str());
         state.selection = Some(selection);
         state.error = None;
         state.revision += 1;
         if sku_changed {
             state.session_started_at = chrono::Utc::now();
             // Revision also distinguishes a return to the same SKU within one app run.
-            state.session_id = format!("{}-{}", state.session_started_at.to_rfc3339(), state.revision);
+            state.session_id = format!(
+                "{}-{}",
+                state.session_started_at.to_rfc3339(),
+                state.revision
+            );
         }
         Ok(state.clone())
     }
-}
 
-#[tauri::command]
-pub fn production_get(state: State<'_, Production>) -> Snapshot {
-    state.get()
-}
-
-#[tauri::command]
-pub async fn production_select(
-    app: tauri::AppHandle,
-    state: State<'_, Production>,
-    db: State<'_, crate::db::DbPool>,
-    lifecycle: State<'_, crate::shutdown::Shutdown>,
-    customer: String,
-    sku: String,
-) -> Result<Snapshot, String> {
-    let _operation = lifecycle.operation()?;
-    let selection = Selection { customer, sku };
-    selection.validate()?;
-    let valid: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM recipes WHERE customer = $1 AND sku = $2)")
-            .bind(&selection.customer)
-            .bind(&selection.sku)
-            .fetch_one(&db.get()?)
-            .await
-            .map_err(|e| e.to_string())?;
-    if !valid {
-        return Err("SKU không thuộc khách hàng đã chọn.".into());
+    /// Called only by the shared recipe command after PLC verification, while collection is paused.
+    pub fn confirm(
+        &self,
+        app: &tauri::AppHandle,
+        customer: String,
+        sku: String,
+        connection: &tokio::sync::watch::Receiver<crate::plc::PlcStatus>,
+    ) -> Result<(), String> {
+        *self.confirmation.lock().unwrap() = Some(connection.clone());
+        let snapshot = self.set(Selection { customer, sku })?;
+        let _ = app.emit("production://changed", &snapshot);
+        Ok(())
     }
-    let snapshot = state.set(selection)?;
-    let _ = app.emit("production://changed", &snapshot);
-    Ok(snapshot)
+
+    pub fn uncertain(&self, app: &tauri::AppHandle) {
+        let snapshot = {
+            let mut state = self.state.lock().unwrap();
+            if state.error.is_some() { return; }
+            state.error = Some(UNCONFIRMED.into());
+            state.revision += 1;
+            state.clone()
+        };
+        let _ = app.emit("production://changed", snapshot);
+    }
+}
+
+#[tauri::command]
+pub async fn production_get(
+    auth: State<'_, crate::auth::Auth>,
+    db: State<'_, crate::db::DbPool>,
+    state: State<'_, Production>,
+) -> Result<Snapshot, String> {
+    let _access = auth.require(&db, false).await?;
+    Ok(state.get())
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ export const getPlcDiagnostics = () => invoke<PlcDiagnostics>("plc_diagnostics")
 export const clearPlcConnectionLog = () => invoke<PlcDiagnostics>("plc_clear_connection_log");
 export const onPlcDiagnostics = (cb: (d: PlcDiagnostics) => void) => listen<PlcDiagnostics>("plc://diagnostics", (e) => cb(e.payload));
 
-/** Error returned by every PLC command (rejected promise value). */
+/** Error emitted by the PLC poller. Command authorization errors are messages. */
 export interface PlcError {
   /** exception: PLC rejected the request (bad address...), still connected.
    *  disconnected: connection lost while the request was pending.
@@ -44,11 +44,6 @@ export const plc = {
     invoke<number[]>("plc_read_holding_registers", { addr, count }),
   readInputRegisters: (addr: number, count: number) =>
     invoke<number[]>("plc_read_input_registers", { addr, count }),
-  writeCoil: (addr: number, value: boolean) => invoke<void>("plc_write_coil", { addr, value }),
-  writeRegister: (addr: number, value: number) => invoke<void>("plc_write_register", { addr, value }),
-  writeCoils: (addr: number, values: boolean[]) => invoke<void>("plc_write_coils", { addr, values }),
-  writeRegisters: (addr: number, values: number[]) =>
-    invoke<void>("plc_write_registers", { addr, values }),
 };
 
 /** Subscribe to connection status changes. */

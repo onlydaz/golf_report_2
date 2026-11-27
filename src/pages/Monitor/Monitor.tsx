@@ -5,6 +5,7 @@ import { useNavigate } from "react-router";
 import { useControl, useLive, useProduction, type SaveState } from "../../app/LiveProvider";
 import BendChart from "../../components/BendChart";
 import PageHeader from "../../components/PageHeader";
+import ProductionConfirmation from "../../components/ProductionConfirmation";
 import PointTable from "../../components/PointTable";
 import { ResultTag, ResultTiles } from "../../components/Result";
 import { useOpenStick } from "../../lib/useOpenStick";
@@ -204,6 +205,14 @@ export default function Monitor() {
   const sku = selection?.sku;
   const sessionId = production.snapshot?.sessionId;
   const sessionStartedAt = production.snapshot?.sessionStartedAt;
+  const liveCurrent = last && last.productionSession === sessionId && last.record.productCode === sku ? last : undefined;
+
+  // Only fall back to a saved record from this SKU and production session.
+  const savedCurrent = useQuery(connected && !!sku && !!sessionId && !liveCurrent, async () => {
+    const page = await db.list({ productCode: sku!, productionSession: sessionId! }, 1, 1);
+    const id = page.items[0]?.id;
+    return id == null ? null : db.detail(id);
+  }, [sku, sessionId, savedTick, refresh], false);
 
   const stats = useQuery(connected && !!sku && !!sessionId,
     () => db.stats({ productCode: sku!, productionSession: sessionId! }), [sku, sessionId, savedTick, refresh], false);
@@ -213,22 +222,26 @@ export default function Monitor() {
   // Chart parameters follow the newest saved result of this SKU, across all sessions.
   const newestId = chart.data?.items[0]?.id;
   const newest = useQuery(connected && !!sku && newestId != null, () => db.detail(newestId!), [sku, sessionId, newestId], false);
-  const current = last && last.productionSession === sessionId && last.record.productCode === sku ? last : undefined;
+  const current = liveCurrent ?? (savedCurrent.data ? {
+    record: savedCurrent.data.record,
+    receivedAt: savedCurrent.data.receivedAt,
+    plcProductCode: savedCurrent.data.plcProductCode,
+    save: { state: "saved" as const, id: savedCurrent.data.id },
+  } : undefined);
   const latestChartRecord = newest.data && newest.data.record.productCode === sku ? newest.data.record : undefined;
 
-  const error = stats.error || recent.error || chart.error || newest.error;
+  const error = stats.error || recent.error || chart.error || newest.error || savedCurrent.error;
 
   return (
     <div className="monitor-page">
       <PageHeader title="1 · Giám sát" />
       {error && <Alert type="error" showIcon title={error} />}
-      {production.snapshot?.error && <Alert type="error" showIcon title={production.snapshot.error} />}
-      {!selection && <Alert type="warning" showIcon title="Chưa chọn SKU sản xuất. Kết quả mới sẽ được lưu với SKU trống cho đến khi chọn khách hàng và SKU tại Công thức đo." />}
 
       <section className="monitor-top" aria-label="Tổng quan">
         <Card className="section-card">
           <div className="kicker">SKU đang chạy</div>
           <strong className="monitor-sku">{sku ?? "0"}</strong>
+          <ProductionConfirmation />
         </Card>
         <PlcStateCard />
         <SummaryCards stats={stats.data} loading={stats.loading} startedAt={sessionStartedAt} />
@@ -237,7 +250,7 @@ export default function Monitor() {
       <section className="monitor-mid">
         <CurrentStick
           current={current}
-          loading={false}
+          loading={savedCurrent.loading}
           onOpen={() =>
             current &&
             openStick(

@@ -130,8 +130,9 @@ impl DbPool {
 }
 
 #[tauri::command]
-pub fn db_status(state: tauri::State<'_, DbStatusState>) -> DbStatus {
-    state.get()
+pub async fn db_status(auth: tauri::State<'_, crate::auth::Auth>, db: tauri::State<'_, DbPool>, state: tauri::State<'_, DbStatusState>) -> Result<DbStatus, String> {
+    let _access = auth.require(&db, false).await?;
+    Ok(state.get())
 }
 
 /// Start the writer task. Events: `db://status`, `db://saved`, `db://error`.
