@@ -54,7 +54,7 @@ export default function BendChart({
   const referenceNum = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
   const limitText = lower != null && upper != null ? `${referenceNum(lower)}–${referenceNum(upper)}`
     : lower != null ? `≥ ${referenceNum(lower)}` : upper != null ? `≤ ${referenceNum(upper)}` : "Chưa cấu hình";
-  // PushDist is already kg. Keep each point's deciding attempt; do not use config pushDistMm.
+  // PushDist is already kg. Keep each point's deciding attempt.
   const loads = (s ? measuredPoints(s) : []).map((p, i) => ({ point: i + 1, value: decidingAttempt(p)?.pushDist }))
     .filter((p): p is { point: number; value: number } => finite(p.value));
   const uniformLoad = loads.length > 0 && loads.every(p => p.value === loads[0].value);

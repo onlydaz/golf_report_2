@@ -75,7 +75,7 @@ export default function Recipe() {
   const [draft, setDraft] = useState<RecipeData>();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { status: plcRecipe, applying, setApplying, refreshRecipe, setDraftDirty } = useLiveRecipe();
+  const { status: plcRecipe, applying, setApplying, setDraftDirty } = useLiveRecipe();
   const transferInFlight = useRef(false);
   const [transferNotice, setTransferNotice] = useState<RecipeTransferReport>();
   const [loadError, setLoadError] = useState("");
@@ -184,7 +184,6 @@ export default function Recipe() {
     setSaving(true); setSaveError("");
     try {
       const result = await recipeApi.save(draft);
-      refreshRecipe();
       setDraft(result); setSaved(result); setShowValidation(false);
       setList(rows => rows.map(row => row.sku === result.sku ? result : row));
       messages.success(`Đã lưu công thức ${result.sku} · phiên bản ${result.recipeRev}.`);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { confirmedRecipeHandshake, emptyPoint, matchActiveRecipe, recipeLoadsKg,
+import { emptyPoint,
   recipeErrors, recipeApplyBlockReason, transferFailure, recipeApi } from "./recipe";
 import type { Recipe, RecipeStation, RecipePlcStatus } from "./recipe";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
@@ -88,45 +88,6 @@ describe("recipe PLC transfer", () => {
     busy: false, needsReconcile: false, commissioned: true, maxWriteWords: 100,
     confirmationReference: "simulator", blockedReason: null, readError: null });
   const saved = () => ({ ...valid(), configured: true, recipeRev: 1 });
-
-  it("uses only completed readable PLC handshakes as fresh active identities", () => {
-    const s = status();
-    expect(confirmedRecipeHandshake(s)).toEqual(s.handshake);
-    expect(confirmedRecipeHandshake()).toBeUndefined();
-    for (const patch of [{ busy: true }, { readError: "Timeout" }, { handshake: null },
-      { handshake: { ...s.handshake!, pcCmd: 1 } }, { handshake: { ...s.handshake!, plcAck: 1 } }]) {
-      expect(confirmedRecipeHandshake({ ...s, ...patch })).toBeUndefined();
-    }
-    // A fresh empty ActSKU must clear the previous identity, not fall back to a measured record.
-    expect(confirmedRecipeHandshake({ ...s, handshake: { ...s.handshake!, actSku: "" } })?.actSku).toBe("");
-  });
-
-  it("requires exact SKU and revision before exposing saved parameters", () => {
-    const r = saved();
-    const h = { ...status().handshake!, actSku: r.sku, actRev: r.recipeRev };
-    expect(matchActiveRecipe(h, r)).toBe(r);
-    expect(matchActiveRecipe(h, { ...r, recipeRev: r.recipeRev + 1 })).toBeUndefined();
-    expect(matchActiveRecipe({ ...h, actRev: h.actRev + 1 }, r)).toBeUndefined();
-    expect(matchActiveRecipe({ ...h, actSku: "MH1144S" }, r)).toBeUndefined();
-    expect(matchActiveRecipe(h, { ...r, configured: false })).toBeUndefined();
-    expect(matchActiveRecipe(h)).toBeUndefined();
-    expect(matchActiveRecipe(undefined, r)).toBeUndefined();
-  });
-
-  it("converts only used point loads from grams to kg and handles disabled stations", () => {
-    const s = valid().stations.butt;
-    s.numPoints = 3;
-    s.points[0].load = 2500;
-    s.points[1].load = 1250;
-    s.points[2].load = 3750;
-    s.points[9].load = 999999;
-    expect(recipeLoadsKg(s)).toEqual([2.5, 1.25, 3.75]);
-    expect(recipeLoadsKg({ ...s, enabled: 0 })).toEqual([]);
-    expect(recipeLoadsKg()).toEqual([]);
-    s.points[1].load = null;
-    expect(recipeLoadsKg(s)).toEqual([]);
-    expect(recipeLoadsKg(valid().stations.tip)).toEqual([0.1]);
-  });
 
   it("gates apply on saved data, connections, commissioning and a ready handshake", () => {
     const r = saved();

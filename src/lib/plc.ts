@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ProductionSnapshot } from "./production";
 
 export type PlcStatus =
   | { state: "connecting" }
@@ -125,6 +126,6 @@ export interface StickRecord {
 }
 
 /** Record [0], emitted when DataReady goes 0 -> 1. */
-export function onRecord(cb: (r: { record: StickRecord; productCode: string }) => void): Promise<UnlistenFn> {
-  return listen<{ record: StickRecord; productCode: string }>("plc://record", (e) => cb(e.payload));
+export function onRecord(cb: (r: { record: StickRecord; productCode: string; production: ProductionSnapshot; receivedAt: string }) => void): Promise<UnlistenFn> {
+  return listen<{ record: StickRecord; productCode: string; production: ProductionSnapshot; receivedAt: string }>("plc://record", (e) => cb(e.payload));
 }

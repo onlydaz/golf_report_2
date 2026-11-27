@@ -52,25 +52,6 @@ export interface RecipeTransferReport {
   handshake?: RecipeHandshake;
 }
 
-/** Only a completed, readable handshake is current evidence of the active identity. */
-export function confirmedRecipeHandshake(status?: RecipePlcStatus): RecipeHandshake | undefined {
-  const h = status?.handshake;
-  return h && !status.busy && !status.readError && h.pcCmd === 0 && h.plcAck === 0 ? h : undefined;
-}
-
-/** No revision history exists: never substitute a newer saved recipe for the PLC revision. */
-export function matchActiveRecipe(handshake?: RecipeHandshake, recipe?: Recipe): Recipe | undefined {
-  return handshake?.actSku && recipe?.configured && recipe.recipeRev > 0
-    && recipe.sku === handshake.actSku && recipe.recipeRev === handshake.actRev ? recipe : undefined;
-}
-
-export function recipeLoadsKg(station?: RecipeStation): number[] {
-  if (station?.enabled !== 1 || !station.numPoints) return [];
-  const loads = station.points.slice(0, station.numPoints).map(p => p.load);
-  return loads.length === station.numPoints && loads.every(v => v !== null && Number.isFinite(v) && v > 0)
-    ? loads.map(v => v! / 1000) : [];
-}
-
 /** An IPC failure is not evidence that the PLC rejected or never received a write. */
 export function transferFailure(error: unknown): RecipeTransferReport {
   if (typeof error === "object" && error !== null && "kind" in error && "message" in error

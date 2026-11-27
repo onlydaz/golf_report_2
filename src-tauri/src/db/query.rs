@@ -17,6 +17,7 @@ pub struct StickFilter {
     /// Exclusive.
     pub to: Option<DateTime<Utc>>,
     pub product_code: Option<String>,
+    pub production_session: Option<String>,
     pub stick_no: Option<i32>,
     /// Overall result: 0 not measured, 1 OK, 2 NG.
     pub result: Option<i16>,
@@ -34,6 +35,9 @@ pub(super) fn push_filter(qb: &mut QueryBuilder<Postgres>, f: &StickFilter) {
     }
     if let Some(v) = &f.product_code {
         qb.push(" AND s.product_code = ").push_bind(v.clone());
+    }
+    if let Some(v) = &f.production_session {
+        qb.push(" AND s.production_session = ").push_bind(v.clone());
     }
     if let Some(v) = f.stick_no {
         qb.push(" AND s.stick_no = ").push_bind(v);

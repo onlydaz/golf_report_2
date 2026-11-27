@@ -15,16 +15,9 @@ use plc::{commands::*, run_poller_with_shutdown, spawn_plc_actor, PlcConfig, Pol
 /// Max wait for the DB save before acknowledging the PLC anyway.
 const SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
@@ -80,7 +73,7 @@ pub fn run() {
             // then ack the PLC (PC_ReadCount + 1, PC_ReadDone = 1).
             let app_handle = app.handle().clone();
             let save_app = app.handle().clone();
-            let captured_sku = Arc::new(Mutex::new(None::<String>));
+            let captured_sku = Arc::new(Mutex::new(None::<(String, String)>));
             let emit_sku = captured_sku.clone();
             let collection_lifecycle = lifecycle.clone();
             let emit = move |ev| {
@@ -88,19 +81,20 @@ pub fn run() {
                     PollEvent::ReadDiagnostics { elapsed_ms, failed } => app_handle.emit("plc://diagnostics", diagnostics.read(elapsed_ms, failed)),
                     PollEvent::Control(c) => app_handle.emit("plc://control", c),
                     PollEvent::Record(r) => {
-                        let selection = app_handle.state::<production::Production>().get().selection;
-                        let sku = selection.map(|s| s.sku).unwrap_or_default();
-                        *emit_sku.lock().unwrap() = Some(sku.clone());
+                        let production = app_handle.state::<production::Production>().get();
+                        let sku = production.selection.as_ref().map(|s| s.sku.clone()).unwrap_or_default();
+                        *emit_sku.lock().unwrap() = Some((sku.clone(), production.session_id.clone()));
                         collection_lifecycle.begin_save();
                         // Preserve the PLC record, including raw ProductCode; publish selected SKU separately.
-                        app_handle.emit("plc://record", serde_json::json!({ "record": r, "productCode": sku }))
+                        app_handle.emit("plc://record", serde_json::json!({ "record": r, "productCode": sku,
+                            "production": production, "receivedAt": chrono::Utc::now() }))
                     },
                     PollEvent::Error(e) => app_handle.emit("plc://poll-error", e),
                 };
             };
             let save_lifecycle = lifecycle.clone();
             let save = move |record: plc::record::StickRecord| {
-                let product_code = captured_sku.lock().unwrap().take().expect("Record event precedes save");
+                let (product_code, production_session) = captured_sku.lock().unwrap().take().expect("Record event precedes save");
                 let db_tx = db_tx.clone();
                 let app = save_app.clone();
                 let lifecycle = save_lifecycle.clone();
@@ -109,7 +103,7 @@ pub fn run() {
                     let (done, rx) = tokio::sync::oneshot::channel();
                     // The writer emits db://saved / db://error for the save itself;
                     // only queue failures and timeouts are reported here.
-                    let message = match db_tx.try_send(db::SaveRequest { record, product_code, done }) {
+                    let message = match db_tx.try_send(db::SaveRequest { record, product_code, production_session: production_session.clone(), done }) {
                         Err(e) => {
                             lifecycle.finish_save(false);
                             Some(format!("save queue: {e}"))
@@ -120,7 +114,7 @@ pub fn run() {
                         },
                     };
                     if let Some(message) = message {
-                        let _ = app.emit("db://error", db::DbError { record_seq: Some(record_seq), message });
+                        let _ = app.emit("db://error", db::DbError { record_seq: Some(record_seq), message, production_session: Some(production_session) });
                     }
                 }
             };
@@ -179,7 +173,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             production::production_get,
             production::production_select,
             shutdown::app_shutdown,

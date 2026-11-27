@@ -19,54 +19,35 @@ pub struct AppConfig {
     pub recipe_transfer: crate::recipe::transfer::TransferConfig,
 }
 
-/// Machine settings shown on the monitor (load, push distance, bend limits, point positions).
-/// The PLC does not send them; they only drive the chart limits and labels.
+/// Reference bend limits only; measured values and OK/NG come from the PLC.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all(serialize = "camelCase"))]
 pub struct MeasurementConfig {
-    #[serde(default = "StationSettings::butt")]
+    #[serde(default = "StationSettings::reference_limits")]
     pub butt: StationSettings,
-    #[serde(default = "StationSettings::tip")]
+    #[serde(default = "StationSettings::reference_limits")]
     pub tip: StationSettings,
 }
 
 impl Default for MeasurementConfig {
     fn default() -> Self {
-        Self { butt: StationSettings::butt(), tip: StationSettings::tip() }
+        Self { butt: StationSettings::reference_limits(), tip: StationSettings::reference_limits() }
     }
 }
 
 /// A station table given in the file replaces the defaults as a whole: keys left
 /// out are shown as "not configured".
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields, rename_all(serialize = "camelCase"))]
+// Ignore obsolete measurement keys in existing TOML files.
+#[serde(default, rename_all(serialize = "camelCase"))]
 pub struct StationSettings {
-    pub load_kg: Option<f32>,
-    pub push_dist_mm: Option<f32>,
     pub bend_min_mm: Option<f32>,
     pub bend_max_mm: Option<f32>,
-    pub positions_mm: Vec<f32>,
 }
 
 impl StationSettings {
-    fn butt() -> Self {
-        Self {
-            load_kg: Some(2.5),
-            push_dist_mm: Some(10.0),
-            bend_min_mm: Some(50.0),
-            bend_max_mm: Some(200.0),
-            positions_mm: vec![150.0, 300.0, 450.0, 600.0],
-        }
-    }
-
-    fn tip() -> Self {
-        Self {
-            load_kg: Some(2.5),
-            push_dist_mm: Some(8.0),
-            bend_min_mm: Some(50.0),
-            bend_max_mm: Some(200.0),
-            positions_mm: vec![80.0],
-        }
+    fn reference_limits() -> Self {
+        Self { bend_min_mm: Some(50.0), bend_max_mm: Some(200.0) }
     }
 }
 
@@ -153,10 +134,10 @@ mod tests {
     #[test]
     fn measurement_defaults_and_override() {
         let cfg: AppConfig = toml::from_str("").unwrap();
-        assert_eq!(cfg.measurement.butt.positions_mm.len(), 4);
-        assert_eq!(cfg.measurement.tip.push_dist_mm, Some(8.0));
+        assert_eq!(cfg.measurement.butt.bend_min_mm, Some(50.0));
+        assert_eq!(cfg.measurement.tip.bend_max_mm, Some(200.0));
         let cfg: AppConfig =
-            toml::from_str("[measurement.tip]\nbend_max_mm = 180.0\npositions_mm = [75.0]\n").unwrap();
+            toml::from_str("[measurement.tip]\nbend_max_mm = 180.0\nload_kg = 2.5\npush_dist_mm = 8.0\npositions_mm = [75.0]\n").unwrap();
         assert_eq!(cfg.measurement.tip.bend_max_mm, Some(180.0));
         assert_eq!(cfg.measurement.tip.bend_min_mm, None);
         assert_eq!(cfg.measurement.butt.bend_min_mm, Some(50.0));

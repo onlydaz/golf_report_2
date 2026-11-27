@@ -10,29 +10,21 @@ password = "postgres"
 dbname = "golf_report"
 max_connections = 5
 
-# Display/export setpoint comes from PLC Load (g -> kg), not the legacy load_kg below.
-# Raw PLC Load is stored unchanged. Actual load (PushDist, kg) and positions come from PLC results.
 # Bend limits are references only; OK/NG always comes from the PLC.
 # A station table written here replaces that station's defaults as a whole:
 # write every key, a key left out is shown as "not configured".
 [measurement.butt]
-load_kg = 2.5
-push_dist_mm = 10.0
 bend_min_mm = 50.0
 bend_max_mm = 200.0
-positions_mm = [150.0, 300.0, 450.0, 600.0]
 
 [measurement.tip]
-load_kg = 2.5
-push_dist_mm = 8.0
 bend_min_mm = 50.0
 bend_max_mm = 200.0
-positions_mm = [80.0]
 
 # Recipe PLC transfer is locked until a technician signs off the actual machine.
 # Acceptance must cover travel/load limits, FC16 device limit, and safe Ladder staging/handshake.
 # No AS200 write limit has been supplied in the workbook. Never infer it from the read limit.
 [recipe_transfer]
-commissioned = true
-confirmation_reference = "xác nhận"
-max_write_words = 100
+commissioned = false
+confirmation_reference = ""
+# max_write_words = <technician-confirmed FC16 limit, 1-123>

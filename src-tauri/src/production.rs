@@ -20,10 +20,13 @@ impl Selection {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub selection: Option<Selection>,
     pub error: Option<String>,
     pub revision: u64,
+    pub session_id: String,
+    pub session_started_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct Production {
@@ -50,12 +53,15 @@ impl Production {
                 Some(format!("Không đọc được SKU sản xuất đã lưu: {e}")),
             ),
         };
+        let started_at = chrono::Utc::now();
         Self {
             path,
             state: Mutex::new(Snapshot {
                 selection,
                 error,
                 revision: 0,
+                session_id: format!("{}-0", started_at.to_rfc3339()),
+                session_started_at: started_at,
             }),
         }
     }
@@ -67,6 +73,9 @@ impl Production {
     fn set(&self, selection: Selection) -> Result<Snapshot, String> {
         selection.validate()?;
         let mut state = self.state.lock().unwrap();
+        if state.selection.as_ref() == Some(&selection) {
+            return Ok(state.clone());
+        }
         // Publish in memory only after the complete selection is persisted.
         let persist = || -> Result<(), Box<dyn std::error::Error>> {
             std::fs::create_dir_all(self.path.parent().ok_or("Thiếu thư mục cấu hình")?)?;
@@ -80,9 +89,15 @@ impl Production {
             Ok(())
         };
         persist().map_err(|e| format!("Không lưu được SKU sản xuất: {e}"))?;
+        let sku_changed = state.selection.as_ref().map(|s| s.sku.as_str()) != Some(selection.sku.as_str());
         state.selection = Some(selection);
         state.error = None;
         state.revision += 1;
+        if sku_changed {
+            state.session_started_at = chrono::Utc::now();
+            // Revision also distinguishes a return to the same SKU within one app run.
+            state.session_id = format!("{}-{}", state.session_started_at.to_rfc3339(), state.revision);
+        }
         Ok(state.clone())
     }
 }
@@ -134,6 +149,10 @@ mod tests {
             sku: "MH1253R".into(),
         };
         state.set(first.clone()).unwrap();
+        let first_session = state.get();
+        state.set(first.clone()).unwrap();
+        assert_eq!(state.get().session_id, first_session.session_id);
+        assert_eq!(state.get().session_started_at, first_session.session_started_at);
         assert!(state.set(Selection { customer: "UNKNOWN".into(), sku: "MH1253R".into() }).is_err());
         assert!(state.set(Selection { customer: "TM".into(), sku: "".into() }).is_err());
         let captured = state.get().selection.unwrap();
@@ -141,6 +160,11 @@ mod tests {
             customer: "MCC".into(),
             sku: "MH1287S".into(),
         };
+        state.set(second.clone()).unwrap();
+        let second_session = state.get().session_id;
+        assert_ne!(second_session, first_session.session_id);
+        state.set(first.clone()).unwrap();
+        assert_ne!(state.get().session_id, first_session.session_id);
         state.set(second.clone()).unwrap();
         assert_eq!(captured, first);
         assert_eq!(Production::load(path.clone()).get().selection, Some(second));

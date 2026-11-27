@@ -13,6 +13,7 @@ export interface DbStatus {
 
 /** A record was saved (`db://saved`). */
 export interface Saved {
+  productionSession: string | null;
   id: number;
   recordSeq: number;
   stickNo: number;
@@ -20,12 +21,14 @@ export interface Saved {
 
 /** A record could not be saved (`db://error`). */
 export interface DbError {
+  productionSession: string | null;
   recordSeq: number | null;
   message: string;
 }
 
 /** Same filter for every query. Dates are ISO strings; `to` is exclusive. */
 export interface StickFilter {
+  productionSession?: string;
   from?: string;
   to?: string;
   productCode?: string;
@@ -86,11 +89,8 @@ export interface StickDetail {
 
 /** `[measurement.butt|tip]` of config.toml. */
 export interface StationSettings {
-  loadKg: number | null;
-  pushDistMm: number | null;
   bendMinMm: number | null;
   bendMaxMm: number | null;
-  positionsMm: number[];
 }
 
 export interface AppInfo {

@@ -11,14 +11,20 @@ pub async fn save_record(pool: &PgPool, r: &StickRecord) -> Result<i64, sqlx::Er
 }
 
 /// Selected SKU was captured on receipt; raw PLC words and measurements remain untouched.
+#[cfg(test)]
 pub async fn save_production_record(pool: &PgPool, r: &StickRecord, product_code: &str) -> Result<i64, sqlx::Error> {
+    save_session_record(pool, r, product_code, None).await
+}
+
+/// Both SKU and session are fixed before queueing, even if this transaction runs later.
+pub async fn save_session_record(pool: &PgPool, r: &StickRecord, product_code: &str, session: Option<&str>) -> Result<i64, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let raw: Vec<u8> = r.raw.iter().flat_map(|w| w.to_le_bytes()).collect();
     let (id,): (i64,) = sqlx::query_as(
         "INSERT INTO stick (record_seq, stick_no, product_code, format_version, \
-                            status_raw, overall_result, raw_words) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+                            status_raw, overall_result, raw_words, production_session) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
     )
     .bind(r.record_seq)
     .bind(r.stick_no)
@@ -27,6 +33,7 @@ pub async fn save_production_record(pool: &PgPool, r: &StickRecord, product_code
     .bind(i32::from(r.status.raw))
     .bind(r.overall_result)
     .bind(raw)
+    .bind(session)
     .fetch_one(&mut *tx)
     .await?;
 

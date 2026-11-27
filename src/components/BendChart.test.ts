@@ -15,8 +15,7 @@ const latest = (): StickRecord => {
       points: [structuredClone(point), structuredClone(point)] },
     tip: { result: 1, pointCount: 1, ngPoint: 0, load: 1500, points: [structuredClone(point)] } };
 };
-const reference: StationSettings = { loadKg: 2.5, pushDistMm: 999, positionsMm: [0, 125.5, 250, 375],
-  bendMinMm: 50, bendMaxMm: 200 };
+const reference: StationSettings = { bendMinMm: 50, bendMaxMm: 200 };
 const render = (latestRecord?: StickRecord, rows: StickRow[] = [], station = reference) =>
   renderToStaticMarkup(createElement(BendChart, { rows, loading: false, latestRecord,
     settings: { butt: station, tip: station } }));
@@ -82,15 +81,14 @@ describe("measurement chart without recipe dependencies", () => {
     expect(render(undefined, [], { ...reference, bendMinMm: NaN })).toContain("≤ 200");
   });
 
-  it("uses PLC grams regardless of configured load and shows unknown without a measurement", () => {
+  it("uses PLC grams and shows unknown without a measurement", () => {
     expect(render()).not.toContain("<b>2,50</b>");
     expect(render()).toContain("<b>—</b>");
     const record = latest();
     record.butt.load = 9000;
-    const html = render(record, [], { ...reference, loadKg: null });
+    const html = render(record);
     expect(html).toContain("<b>9,00</b>");
     expect(html).not.toContain("<b>2,50</b>");
-    expect(render(record, [], { ...reference, loadKg: 0 })).toContain("<b>9,00</b>");
     record.butt.load = 2500;
     expect(render(record)).toContain("<b>2,50</b>");
   });

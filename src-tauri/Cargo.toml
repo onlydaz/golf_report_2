@@ -19,7 +19,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -27,10 +26,9 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 toml = "1.2.3"
 chrono = { version = "0.4.45", features = ["serde"] }
-bigdecimal = { version = "0.4.11", features = ["serde"] }
 tokio = { version = "1.54.1", features = ["full"] }
 tokio-modbus = { version = "0.17.0", default-features = false, features = ["tcp"] }
-sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "chrono", "bigdecimal"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "chrono"] }
 
 [dev-dependencies]
 tokio-modbus = { version = "0.17.0", default-features = false, features = ["tcp", "tcp-server"] }

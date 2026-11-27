@@ -40,7 +40,7 @@ function SummaryCards({ stats, loading, startedAt }: { stats?: StickStats; loadi
       <Card className="section-card monitor-count">
         <div className="kicker">Tổng số gậy</div>
         <strong>{count(stats?.total, loading)}</strong>
-        <small>Từ khi mở app {startedAt ? fmtTime(startedAt).slice(0, 5) : ""}</small>
+        <small>Từ {startedAt ? fmtTime(startedAt).slice(0, 5) : "—"}</small>
       </Card>
       <Card className="section-card">
         <div className="kicker">Theo trạm</div>
@@ -112,7 +112,7 @@ function CurrentStick({
   return (
     <Card className="section-card monitor-current">
       <div className="monitor-current-heading">
-        <h2>Gậy vừa kiểm tra · {r ? `#${r.stickNo}` : "Chưa có dữ liệu"}</h2>
+        <h2>Gậy vừa kiểm tra · {r ? `#${r.stickNo}` : "Chưa có kết quả đo trong phiên hiện tại"}</h2>
         {r && (
           <span title={PLC_LOAD_SOURCE}>
             {fmtTime(current.receivedAt)} · Lực đè cài đặt BUTT {fmtKg(r.butt.load)} kg / TIP{" "}
@@ -200,22 +200,22 @@ export default function Monitor() {
   const [recentPage, setRecentPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
   const openStick = useOpenStick();
-
-  const stats = useQuery(connected && !!info, () => db.stats({ from: info!.startedAt }), [info, savedTick, refresh]);
-  const recent = useQuery(connected, () => db.list({}, recentPage, RECENT_PAGE_SIZE), [recentPage, savedTick, refresh]);
-  const chart = useQuery(connected, () => db.list({}, 1, CHART_SIZE), [savedTick, refresh]);
-
-  // Newest saved stick, shown until the PLC sends a record in this run.
-  const newestId = chart.data?.items[0]?.id;
-  const newest = useQuery(connected && !last && newestId != null, () => db.detail(newestId!), [newestId]);
-  const current = last
-    ? last
-    : newest.data
-      ? { record: newest.data.record, plcProductCode: newest.data.plcProductCode, receivedAt: newest.data.receivedAt, save: { state: "saved" as const, id: newest.data.id } }
-      : undefined;
-
   const selection = production.snapshot?.selection;
   const sku = selection?.sku;
+  const sessionId = production.snapshot?.sessionId;
+  const sessionStartedAt = production.snapshot?.sessionStartedAt;
+
+  const stats = useQuery(connected && !!sku && !!sessionId,
+    () => db.stats({ productCode: sku!, productionSession: sessionId! }), [sku, sessionId, savedTick, refresh], false);
+  const recent = useQuery(connected, () => db.list({}, recentPage, RECENT_PAGE_SIZE), [recentPage, savedTick, refresh]);
+  const chart = useQuery(connected && !!sku, () => db.list({ productCode: sku! }, 1, CHART_SIZE), [sku, sessionId, savedTick, refresh], false);
+
+  // Chart parameters follow the newest saved result of this SKU, across all sessions.
+  const newestId = chart.data?.items[0]?.id;
+  const newest = useQuery(connected && !!sku && newestId != null, () => db.detail(newestId!), [sku, sessionId, newestId], false);
+  const current = last && last.productionSession === sessionId && last.record.productCode === sku ? last : undefined;
+  const latestChartRecord = newest.data && newest.data.record.productCode === sku ? newest.data.record : undefined;
+
   const error = stats.error || recent.error || chart.error || newest.error;
 
   return (
@@ -231,13 +231,13 @@ export default function Monitor() {
           <strong className="monitor-sku">{sku ?? "0"}</strong>
         </Card>
         <PlcStateCard />
-        <SummaryCards stats={stats.data} loading={stats.loading} startedAt={info?.startedAt} />
+        <SummaryCards stats={stats.data} loading={stats.loading} startedAt={sessionStartedAt} />
       </section>
 
       <section className="monitor-mid">
         <CurrentStick
           current={current}
-          loading={recent.loading || newest.loading}
+          loading={false}
           onOpen={() =>
             current &&
             openStick(
@@ -247,7 +247,7 @@ export default function Monitor() {
             )
           }
         />
-        <BendChart rows={chart.data?.items ?? []} loading={chart.loading} latestRecord={current?.record} settings={info?.measurement} />
+        <BendChart rows={chart.data?.items ?? []} loading={chart.loading} latestRecord={latestChartRecord} settings={info?.measurement} />
       </section>
 
       <RecentTable

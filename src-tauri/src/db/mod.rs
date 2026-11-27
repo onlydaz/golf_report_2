@@ -80,6 +80,7 @@ pub struct DbStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Saved {
+    pub production_session: Option<String>,
     pub id: i64,
     pub record_seq: i32,
     pub stick_no: i32,
@@ -88,6 +89,7 @@ pub struct Saved {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbError {
+    pub production_session: Option<String>,
     pub record_seq: Option<i32>,
     pub message: String,
 }
@@ -96,6 +98,7 @@ pub struct DbError {
 pub struct SaveRequest {
     pub record: StickRecord,
     pub product_code: String,
+    pub production_session: String,
     pub done: oneshot::Sender<Result<i64, String>>,
 }
 
@@ -154,12 +157,12 @@ pub fn spawn_writer(
         let _ = shared.0.set(pool.clone());
         status.set(&app, DbStatus { connected: true, error: None });
 
-        while let Some(SaveRequest { record: r, product_code, done }) = rx.recv().await {
-            let result = match store::save_production_record(&pool, &r, &product_code).await {
+        while let Some(SaveRequest { record: r, product_code, production_session, done }) = rx.recv().await {
+            let result = match store::save_session_record(&pool, &r, &product_code, Some(&production_session)).await {
                 Ok(id) => {
                     let _ = app.emit(
                         "db://saved",
-                        Saved { id, record_seq: r.record_seq, stick_no: r.stick_no },
+                        Saved { id, record_seq: r.record_seq, stick_no: r.stick_no, production_session: Some(production_session.clone()) },
                     );
                     Ok(id)
                 }
@@ -167,7 +170,7 @@ pub fn spawn_writer(
                     eprintln!("db: save record_seq {} failed: {e}", r.record_seq);
                     let _ = app.emit(
                         "db://error",
-                        DbError { record_seq: Some(r.record_seq), message: e.to_string() },
+                        DbError { record_seq: Some(r.record_seq), message: e.to_string(), production_session: Some(production_session.clone()) },
                     );
                     Err(e.to_string())
                 }
